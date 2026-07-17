@@ -220,3 +220,11 @@ While this document uses healthcare medical billing as the illustrative use case
 *Feature announcement:* https://aws.amazon.com/about-aws/whats-new/2026/06/aws-step-functions-agentcore/
 
 *Medical coding reference:* https://www.aapc.com/resources/getting-started-in-medical-coding-and-billing-a-guide-to-the-fundamentals
+
+## Security
+
+See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+
+## License
+
+This library is licensed under the MIT-0 License. See the [LICENSE](LICENSE) file.
