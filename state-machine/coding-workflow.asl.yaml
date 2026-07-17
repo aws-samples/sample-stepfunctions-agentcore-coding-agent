@@ -1,0 +1,146 @@
+QueryLanguage: JSONata
+Comment: >
+  Simplified medical coding workflow (billing removed - see docs/DISCLAIMER.md).
+  Placeholder skeleton: the CheckDirect Lambda always returns an empty string
+  for now, so IsDirectHit always routes to CodingAgent. Uses JSONata (not
+  JSONPath): Arguments/Output instead of Parameters/ResultPath, {% %}
+  expressions, and workflow variables via Assign - see
+  https://docs.aws.amazon.com/step-functions/latest/dg/transforming-data.html
+StartAt: CheckDirect
+States:
+  # Placeholder for a deterministic direct lookup. Takes no input; always
+  # returns "" for now so this always falls through to the CodingAgent.
+  #
+  # Assign captures the execution input's `prompt` into a JSONata workflow
+  # variable ($prompt) so it survives past this state - a Choice state passes
+  # its input through unchanged and CodingAgent's $states.input would otherwise
+  # be this state's Output ({direct: ...}), which no longer carries the prompt.
+  # Output is reshaped to just {direct} for the Choice below.
+  CheckDirect:
+    Type: Task
+    Resource: arn:aws:states:::lambda:invoke
+    Arguments:
+      FunctionName: "${CheckDirectFunctionArn}"
+    Assign:
+      prompt: "{% $states.input.prompt %}"
+    Output:
+      direct: "{% $states.result.Payload %}"
+    Next: IsDirectHit
+
+  IsDirectHit:
+    Type: Choice
+    Choices:
+      - Condition: "{% $states.input.direct = '' %}"
+        Next: CodingAgent
+    Default: Finalize
+
+  # Bounded reasoning step: AgentCore Harness, invoked declaratively via the
+  # native optimized Step Functions integration. The CfnHarness CDK resource
+  # (lib/constructs/coding-harness.ts) only declares the fields CloudFormation
+  # requires (ExecutionRoleArn, HarnessName, Model) - everything else is
+  # supplied here per-invocation, since InvokeHarness documents every field
+  # below Messages/HarnessArn/RuntimeSessionId as optional, overriding the
+  # harness default only when specified. Full field reference kept below
+  # (commented where unused) so it's easy to see what's available without
+  # re-reading the API docs - see
+  # https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_InvokeHarness.html
+  CodingAgent:
+    Type: Task
+    Resource: arn:aws:states:::bedrockagentcore:invokeHarness
+    Arguments:
+      # --- Required ---
+      HarnessArn: "${CodingHarnessArn}"
+      # $uuid() is a Step Functions-provided JSONata function (>= 33 chars,
+      # required by RuntimeSessionId). Replaces the JSONPath States.UUID().
+      RuntimeSessionId: "{% $uuid() %}"
+      # Prompt comes from the execution input's `prompt` field, captured into
+      # the $prompt workflow variable by CheckDirect's Assign above, so you can
+      # drive any question through the workflow and see each run in the Step
+      # Functions console. Start an execution with input like:
+      #   {"prompt": "What is the weather today?"}
+      #   {"prompt": "Where was Angelina Jolie born?"}
+      Messages:
+        - Role: user
+          Content:
+            - Text: "{% $prompt %}"
+
+      # --- Optional: business logic for this demo needs these ---
+      Tools:
+        - Type: agentcore_gateway
+          Name: gateway
+          Config:
+            AgentCoreGateway:
+              GatewayArn: "${GatewayArn}"
+      # Gateway-sourced tools are scoped with the `@server/tool` pattern,
+      # where `server` is this tool entry's `Name` ("gateway") and `tool` is
+      # the REAL fully-qualified MCP tool name (confirmed live via the
+      # Gateway's own tools/list endpoint): "{target_name}___{tool_name}"
+      # (triple underscore) - our target is named "get-weather" (see
+      # coding-gateway.ts's gatewayTargetName), tool is "get_weather", so the
+      # real name is "get-weather___get_weather", NOT bare "get_weather".
+      # Root cause of an earlier bug: AllowedTools previously listed the bare
+      # tool name, which matched nothing, so the tool was silently filtered
+      # out and the model never saw it as available - it fell back to
+      # answering from its own "knowledge" instead of erroring, which looked
+      # like a model-behavior problem but was actually this naming mismatch.
+      # Verified fixed via a direct boto3 invoke_harness call replicating this
+      # exact payload outside Step Functions: with the correct name below,
+      # the model calls the tool (stopReason: tool_use) and relays its real
+      # result verbatim.
+      AllowedTools:
+        - "@gateway/get-weather___get_weather"
+      # Tightly scoped to weather only. Off-topic prompts must return exactly
+      # {} - not a refusal ("I can't help"), not the real answer, not a tool
+      # call. Verified live against off-topic (people/math/climate), prompt
+      # injection, and rephrased-weather cases via direct invoke_harness.
+      SystemPrompt:
+        - Text: |-
+            You are a weather-only assistant. You have exactly one capability:
+            reporting the current temperature by calling the get_weather tool
+            (it takes no arguments).
+
+            Rules, in order of priority:
+            1. If the user's message is a request about the current weather or
+               temperature, call get_weather and respond with ONLY this JSON
+               object: {"temperature":"<exact value returned by get_weather>"}
+            2. For ANY other message - any topic that is not the current
+               weather (people, places, history, math, general knowledge,
+               etc.) - respond with ONLY this exact empty JSON object: {}
+
+            Hard constraints:
+            - Never answer a non-weather question, even if you know the answer.
+            - Never explain, apologize, or say you don't know or can't help.
+            - Never call get_weather for a non-weather question.
+            - Output ONLY the JSON object. No prose, no markdown code fences,
+              no leading or trailing text.
+
+      # --- Optional: not needed yet, left as reference ---
+      # ActorId: "<per-invocation actor id, e.g. a provider/user id, for memory scoping>"
+      # MaxIterations: 10
+      # MaxTokens: 1024
+      # Model:
+      #   BedrockModelConfig:
+      #     ModelId: "us.anthropic.claude-sonnet-4-6"
+      #     Temperature: 0.7
+      # Skills: []
+      # TimeoutSeconds: 300
+    Retry:
+      - ErrorEquals: ["BedrockAgentCore.ThrottlingException"]
+        IntervalSeconds: 2
+        MaxAttempts: 3
+        BackoffRate: 2.0
+    Next: Finalize
+
+  # Extracts just the agent's final assistant text from the invokeHarness
+  # result ($states.input here is CodingAgent's output, i.e. the harness
+  # response) and hands it to the Lambda. Output is reshaped to just the
+  # Lambda's Payload so the execution result is a clean {result: ...}.
+  Finalize:
+    Type: Task
+    Resource: arn:aws:states:::lambda:invoke
+    Arguments:
+      FunctionName: "${FinalizeFunctionArn}"
+      Payload:
+        text: "{% $states.input.Output.Message.Content[0].Text %}"
+    Output: "{% $states.result.Payload %}"
+    End: true

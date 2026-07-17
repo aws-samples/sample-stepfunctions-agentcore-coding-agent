@@ -1,0 +1,15 @@
+node_modules/
+dist/
+cdk.out/
+*.js
+!jest.config.js
+.env
+.DS_Store
+*.log
+
+# Scratch space for downloads, drafts, and intermediate processing.
+# Not part of the published sample.
+scratch_data/
+
+# draw.io editable source — the exported PNG in assets/ is the committed artifact.
+*.drawio
