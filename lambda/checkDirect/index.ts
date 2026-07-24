@@ -2,9 +2,9 @@ import { executeStatement, Row } from '../shared/dataApi';
 
 /**
  * First state in the coding workflow: the deterministic direct-lookup path,
- * run before any LLM involvement. Ported from the blog's tna_guard.py +
- * exact_match.py (States 1 and 2), merged into one Lambda. Given a verbatim
- * term it checks, in order:
+ * run before any LLM involvement. Combines the block-list guard and the
+ * exact/synonym match into one Lambda. Given a verbatim term it checks, in
+ * order:
  *
  *   1. The terms-not-to-autocode block-list. A hit is a deliberate safety
  *      block: the term is too ambiguous to auto-assign (e.g. "HAEMORRHAGE")
@@ -60,7 +60,7 @@ export const handler = async (event: CheckDirectInput): Promise<CheckDirectResul
     );
   }
 
-  // 1) Block-list guard (blog State 1 - tna_guard).
+  // 1) Block-list guard.
   const blocked = await executeStatement(
     `SELECT 1 AS hit
      FROM terms_not_to_autocode
@@ -77,7 +77,7 @@ export const handler = async (event: CheckDirectInput): Promise<CheckDirectResul
     return { blocked: true, matched: false, match_type: null, candidate: null };
   }
 
-  // 2) Exact + synonym match (blog State 2 - exact_match).
+  // 2) Exact + synonym match.
   const rows = await executeStatement(
     `-- curated synonyms (active) that pin a verbatim to a real code
      SELECT dict_term, dict_term_type, dict_term_code, derivation,

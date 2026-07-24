@@ -6,10 +6,9 @@ import { executeStatement } from '../../shared/dataApi';
 
 /**
  * Gateway tool `search_dictionary`, called by the CodingAgent when the
- * deterministic direct-lookup path missed. Ported from the blog's
- * vector_search @tool (agent_app.py): embeds the verbatim term with Titan
- * Text Embeddings v2 and runs a pgvector cosine-distance (<=>) similarity
- * query against the dictionary_terms table, scoped to the requested
+ * deterministic direct-lookup path missed. Embeds the verbatim term with
+ * Titan Text Embeddings v2 and runs a pgvector cosine-distance (<=>)
+ * similarity query against the dictionary_terms table, scoped to the requested
  * dictionary + version and excluding prior-index rows. Vectors live
  * alongside the source rows - see lib/constructs/coding-database.ts.
  *

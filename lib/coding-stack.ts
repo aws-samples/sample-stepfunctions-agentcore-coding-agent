@@ -29,7 +29,7 @@ export class CodingStack extends Stack {
       writeBackFn: lambdas.writeBackFn,
     });
 
-    // Consumed by scripts/seed.py (schema creation + fixture data +
+    // Consumed by scripts/seed.ts (schema creation + fixture data +
     // embeddings via the RDS Data API) and by manual testing.
     new CfnOutput(this, 'DbClusterArn', { value: database.cluster.clusterArn });
     new CfnOutput(this, 'DbSecretArn', { value: database.cluster.secret!.secretArn });

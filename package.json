@@ -13,7 +13,7 @@
     "watch": "tsc -w",
     "test": "jest",
     "cdk": "cdk",
-    "seed": "python3 scripts/seed.py"
+    "seed": "tsx scripts/seed.ts"
   },
   "devDependencies": {
     "@types/aws-lambda": "latest",
@@ -38,6 +38,7 @@
     "@aws-sdk/lib-dynamodb": "^3.1087.0",
     "aws-cdk-lib": "latest",
     "constructs": "latest",
+    "csv-parse": "^5.6.0",
     "source-map-support": "latest",
     "yaml": "latest"
   }

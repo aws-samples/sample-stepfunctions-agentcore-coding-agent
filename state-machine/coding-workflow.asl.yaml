@@ -1,8 +1,8 @@
 QueryLanguage: JSONata
 Comment: >
-  Agentic autocoding workflow, ported from the blog's autocoding.asl.json to
-  the AgentCore Harness integration. One execution codes one clinical
-  verbatim from the study_terms table: deterministic direct lookup
+  Agentic autocoding workflow, built on the AgentCore Harness integration.
+  One execution codes one clinical verbatim from the study_terms table:
+  deterministic direct lookup
   (block-list guard + exact/synonym match) -> agentic semantic search
   (AgentCore Harness + pgvector search_dictionary tool) -> score-threshold
   routing -> write-back onto the same study_terms row. Standard workflow:
@@ -91,8 +91,8 @@ States:
   # single best candidate as JSON; the Assign below parses that text and
   # normalizes the confidence score, and ScoreThreshold routes on it. A
   # malformed (non-JSON) answer fails the $parse in Assign, which the Catch
-  # routes to MarkOpen - the same "no confident code" outcome the blog's
-  # runtime app produced with its score-0.0 fallback.
+  # routes to MarkOpen - "no confident code" is a valid, deliberate outcome,
+  # not a workflow failure.
   CodingAgent:
     Type: Task
     Resource: arn:aws:states:::bedrockagentcore:invokeHarness
@@ -129,8 +129,7 @@ States:
       # from its own "knowledge" instead of erroring.
       AllowedTools:
         - "@gateway/search-dictionary___search_dictionary"
-      # Ported from the blog's AGENT_PROMPT, tightened with the hard
-      # constraints this sample already used: the agent must ground its
+      # A coding prompt with hard constraints: the agent must ground its
       # answer in real search_dictionary results and copy every value
       # verbatim. Unlike an "abstain" prompt, it always returns the top
       # candidate - even at a low score - and lets the workflow's

@@ -1,27 +1,30 @@
 # Scope and Disclaimer
 
-This sample uses a simplified medical billing scenario to demonstrate an AWS
-architecture pattern: orchestrating deterministic workflow logic (AWS Step Functions)
-with bounded agentic reasoning (Amazon Bedrock AgentCore Harness).
+This sample uses a simplified clinical medical-coding scenario to demonstrate an
+AWS architecture pattern: orchestrating deterministic workflow logic (AWS Step
+Functions) with bounded agentic reasoning (Amazon Bedrock AgentCore Harness).
 
-**This is not a certified or production-ready billing solution.** Specifically:
+**This is not a certified or production-ready medical coding solution.**
+Specifically:
 
-- Coding examples (ICD-10, CPT, HCPCS) are simplified, textbook-level illustrations,
-  not exhaustive or payer-specific coding guidance.
-- Denial/appeal classification logic is a simplified two-bucket example
-  (corrected-claim vs. appealable). Production systems require a complete,
-  payer-specific rules table.
-- CCI edit checks are represented as a small number of hand-picked illustrative
-  bundling pairs, not the full CMS quarterly NCCI edit tables. Fee schedules and
-  timely-filing windows are placeholder values.
-- No real patient data, PHI, or payer information is used. Test fixtures in
-  `test/fixtures/` are either synthetic or derived from CMS's own public
-  "realistic-but-not-real" synthetic Medicare claims data (see
-  [SOURCES.md](SOURCES.md)).
-- Payer billing policy documents referenced by the coding agent's Knowledge Base
-  are authored as illustrative samples for this repository — they are not sourced
-  from, and should not be treated as representative of, any real payer's actual
-  coverage policy.
+- Dictionary coverage (MedDRA terms in `data/dictionary_terms_meddra.csv`, WHODrug
+  terms in `data/dictionary_terms_whodrug.csv`) is a de minimis illustrative set —
+  a handful of terms chosen to exercise every branch of the workflow, not a
+  redistributable extract of either licensed dictionary. Production coding
+  requires the full, currently licensed MedDRA and/or WHODrug dictionary for the
+  version in use.
+- The synonym list (`data/synonym_list.csv`) and block-list
+  (`data/terms_not_to_autocode.csv`) are illustrative fixtures authored for this
+  repository, not a curated clinical coding standard. A real deployment's
+  synonym and block-list content should be governed by qualified medical coders.
+- The 0.90 / 0.70 semantic-search confidence thresholds in
+  `state-machine/coding-workflow.asl.yaml` are illustrative starting points, not
+  values validated against a production embedding model or dictionary version —
+  see the calibration note in the [README](../README.md).
+- No real patient, subject, or site data is used. The study/site/subject
+  identifiers and free-text verbatims in `data/study_terms_input.csv` and
+  `data/golden_walkthrough.csv` are entirely fabricated for this sample.
 
-Consult qualified medical billing and coding professionals, and your current
-payer agreements, before adapting any part of this pattern for production use.
+Consult qualified medical coding professionals, and your organization's current
+MedDRA/WHODrug license terms, before adapting any part of this pattern for
+production use.

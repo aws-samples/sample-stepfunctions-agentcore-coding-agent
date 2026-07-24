@@ -1,9 +1,8 @@
 import { executeStatement } from '../shared/dataApi';
 
 /**
- * Terminal state for the coding workflow (ported from the blog's
- * write_back.py, State 4). Persists the coding outcome onto the SAME
- * study_terms row (in place). Handles three target states:
+ * Terminal state for the coding workflow. Persists the coding outcome onto
+ * the SAME study_terms row (in place). Handles three target states:
  *
  *   - autocoded          : deterministic (exact/synonym) OR high-confidence agent
  *   - approval_required  : medium-confidence agent candidate -> human queue

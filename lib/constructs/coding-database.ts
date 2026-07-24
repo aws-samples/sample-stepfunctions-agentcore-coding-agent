@@ -17,9 +17,10 @@ import * as rds from 'aws-cdk-lib/aws-rds';
  * VPC needs internet egress).
  *
  * Schema creation and seeding are intentionally NOT provisioned here (no
- * custom resource): per the current plan, a local Python script
- * (scripts/seed.py) creates the pgvector extension, tables, fixture rows, and
- * embeddings through the Data API after deploy. CDC-driven embedding
+ * custom resource): per the current plan, a local seed script
+ * (scripts/seed.ts, run via `npm run seed`) creates the pgvector extension,
+ * tables, fixture rows, and embeddings through the Data API after deploy.
+ * CDC-driven embedding
  * generation (design item #2) is deferred.
  *
  * Demo posture: min capacity 0 ACU (auto-pause when idle) and
