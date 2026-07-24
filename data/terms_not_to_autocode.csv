@@ -1,0 +1,10 @@
+record_id,dictionary,verbatim,status,changed_by,last_modified_ts,created_at_ts
+meddra_tna-0001,MedDRA,BLEEDING,active,coding-sme,1723475758,1723475758
+meddra_tna-0002,MedDRA,DISCOMFORT,active,coding-sme,1723475758,1723475758
+meddra_tna-0003,MedDRA,ECHO,active,coding-sme,1723475758,1723475758
+meddra_tna-0004,MedDRA,HAEMORRHAGE,active,coding-sme,1723475758,1723475758
+meddra_tna-0005,MedDRA,HYPERTONIA,active,coding-sme,1723475758,1723475758
+meddra_tna-0006,MedDRA,HYPOTONIA,active,coding-sme,1723475758,1723475758
+meddra_tna-0007,MedDRA,INFARCTION,active,coding-sme,1723475758,1723475758
+meddra_tna-0008,MedDRA,INFECTION,active,coding-sme,1723475758,1723475758
+meddra_tna-0009,MedDRA,REGURGITATION,active,coding-sme,1723475758,1723475758

@@ -12,7 +12,7 @@ export interface CodingStateMachineProps {
   codingHarness: agentcore.CfnHarness;
   gatewayArn: string;
   checkDirectFn: lambda.Function;
-  finalizeFn: lambda.Function;
+  writeBackFn: lambda.Function;
 }
 
 /**
@@ -34,7 +34,7 @@ export class CodingStateMachine extends Construct {
       definitionBody: sfn.DefinitionBody.fromString(definition),
       definitionSubstitutions: {
         CheckDirectFunctionArn: props.checkDirectFn.functionArn,
-        FinalizeFunctionArn: props.finalizeFn.functionArn,
+        WriteBackFunctionArn: props.writeBackFn.functionArn,
         CodingHarnessArn: props.codingHarness.attrArn,
         GatewayArn: props.gatewayArn,
       },
@@ -46,7 +46,7 @@ export class CodingStateMachine extends Construct {
       },
     });
 
-    for (const fn of [props.checkDirectFn, props.finalizeFn]) {
+    for (const fn of [props.checkDirectFn, props.writeBackFn]) {
       fn.grantInvoke(this.codingWorkflow);
     }
 
