@@ -1,49 +1,98 @@
 QueryLanguage: JSONata
 Comment: >
-  Simplified medical coding workflow (billing removed - see docs/DISCLAIMER.md).
-  Placeholder skeleton: the CheckDirect Lambda always returns an empty string
-  for now, so IsDirectHit always routes to CodingAgent. Uses JSONata (not
-  JSONPath): Arguments/Output instead of Parameters/ResultPath, {% %}
-  expressions, and workflow variables via Assign - see
+  Agentic autocoding workflow, ported from the blog's autocoding.asl.json to
+  the AgentCore Harness integration. One execution codes one clinical
+  verbatim from the study_terms table: deterministic direct lookup
+  (block-list guard + exact/synonym match) -> agentic semantic search
+  (AgentCore Harness + pgvector search_dictionary tool) -> score-threshold
+  routing -> write-back onto the same study_terms row. Standard workflow:
+  exactly-once, and the execution history is a per-term audit trail. An
+  un-coded term is a valid business outcome, not a workflow failure - every
+  error path lands on MarkOpen. Uses JSONata (not JSONPath):
+  Arguments/Output instead of Parameters/ResultPath, {% %} expressions, and
+  workflow variables via Assign - see
   https://docs.aws.amazon.com/step-functions/latest/dg/transforming-data.html
-StartAt: CheckDirect
+StartAt: CaptureInput
 States:
-  # Placeholder for a deterministic direct lookup. Takes no input; always
-  # returns "" for now so this always falls through to the CodingAgent.
-  #
-  # Assign captures the execution input's `prompt` into a JSONata workflow
-  # variable ($prompt) so it survives past this state - a Choice state passes
-  # its input through unchanged and CodingAgent's $states.input would otherwise
-  # be this state's Output ({direct: ...}), which no longer carries the prompt.
-  # Output is reshaped to just {direct} for the Choice below.
+  # Capture the execution input (one study_terms row) into JSONata workflow
+  # variables BEFORE any fallible state runs, so every state - including the
+  # MarkOpen error sink reached from a Catch - can reference them. Task
+  # Assigns only run on success, so doing this in the Task itself would
+  # leave $recordId undefined on the error path. Execution input:
+  #   {"record_id": "...", "verbatim": "migrane",
+  #    "encoding_dictionary": "MedDRA",
+  #    "encoding_dictionary_version": "v27.0",
+  #    "derivation_only": false}
+  CaptureInput:
+    Type: Pass
+    Assign:
+      recordId: "{% $states.input.record_id %}"
+      verbatim: "{% $states.input.verbatim %}"
+      dictionary: "{% $states.input.encoding_dictionary %}"
+      dictionaryVersion: "{% $states.input.encoding_dictionary_version %}"
+      # equality with a missing field is false, so this normalizes an
+      # omitted derivation_only to false
+      derivationOnly: "{% $states.input.derivation_only = true %}"
+    Next: CheckDirect
+
+  # State 1+2 (deterministic, no LLM) - block-list guard + exact/synonym
+  # match in one Lambda. Returns a tri-state result:
+  #   blocked=true             -> MarkOpen (safety block, not "no match")
+  #   matched=true + candidate -> WriteBack (deterministic autocode, score 1.0)
+  #   neither                  -> CodingAgent (semantic search)
   CheckDirect:
     Type: Task
     Resource: arn:aws:states:::lambda:invoke
     Arguments:
       FunctionName: "${CheckDirectFunctionArn}"
+      Payload:
+        verbatim: "{% $verbatim %}"
+        encoding_dictionary: "{% $dictionary %}"
+        encoding_dictionary_version: "{% $dictionaryVersion %}"
     Assign:
-      prompt: "{% $states.input.prompt %}"
-    Output:
       direct: "{% $states.result.Payload %}"
-    Next: IsDirectHit
+    Retry:
+      - ErrorEquals:
+          - Lambda.TooManyRequestsException
+          - Lambda.ServiceException
+        IntervalSeconds: 2
+        MaxAttempts: 3
+        BackoffRate: 2.0
+    Catch:
+      - ErrorEquals: ["States.ALL"]
+        Next: MarkOpen
+    Next: RouteDirect
 
-  IsDirectHit:
+  RouteDirect:
     Type: Choice
     Choices:
-      - Condition: "{% $states.input.direct = '' %}"
-        Next: CodingAgent
-    Default: Finalize
+      # CASE C - block-list hit -> stays open (safety block, not "no match").
+      - Condition: "{% $direct.blocked %}"
+        Next: MarkOpen
+      # CASE A/B/G - unique exact or synonym match -> deterministic autocode
+      # at score 1.00.
+      - Condition: "{% $direct.matched %}"
+        Next: WriteBack
+    # Miss -> bounded agent reasoning over the pgvector candidates.
+    Default: CodingAgent
 
-  # Bounded reasoning step: AgentCore Harness, invoked declaratively via the
-  # native optimized Step Functions integration. The CfnHarness CDK resource
-  # (lib/constructs/coding-harness.ts) only declares the fields CloudFormation
-  # requires (ExecutionRoleArn, HarnessName, Model) - everything else is
-  # supplied here per-invocation, since InvokeHarness documents every field
-  # below Messages/HarnessArn/RuntimeSessionId as optional, overriding the
-  # harness default only when specified. Full field reference kept below
-  # (commented where unused) so it's easy to see what's available without
-  # re-reading the API docs - see
+  # State 3 (agentic semantic search) - AgentCore Harness, invoked
+  # declaratively via the native optimized Step Functions integration. The
+  # CfnHarness CDK resource (lib/constructs/coding-harness.ts) only declares
+  # the fields CloudFormation requires (ExecutionRoleArn, HarnessName,
+  # Model) - everything else is supplied here per-invocation, since
+  # InvokeHarness documents every field below Messages/HarnessArn/
+  # RuntimeSessionId as optional, overriding the harness default only when
+  # specified. See
   # https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_InvokeHarness.html
+  #
+  # The agent's only tool is search_dictionary (pgvector cosine kNN over the
+  # dictionary_terms embedding column, via the Gateway). It returns the
+  # single best candidate as JSON; the Assign below parses that text and
+  # normalizes the confidence score, and ScoreThreshold routes on it. A
+  # malformed (non-JSON) answer fails the $parse in Assign, which the Catch
+  # routes to MarkOpen - the same "no confident code" outcome the blog's
+  # runtime app produced with its score-0.0 fallback.
   CodingAgent:
     Type: Task
     Resource: arn:aws:states:::bedrockagentcore:invokeHarness
@@ -51,18 +100,14 @@ States:
       # --- Required ---
       HarnessArn: "${CodingHarnessArn}"
       # $uuid() is a Step Functions-provided JSONata function (>= 33 chars,
-      # required by RuntimeSessionId). Replaces the JSONPath States.UUID().
+      # required by RuntimeSessionId).
       RuntimeSessionId: "{% $uuid() %}"
-      # Prompt comes from the execution input's `prompt` field, captured into
-      # the $prompt workflow variable by CheckDirect's Assign above, so you can
-      # drive any question through the workflow and see each run in the Step
-      # Functions console. Start an execution with input like:
-      #   {"prompt": "What is the weather today?"}
-      #   {"prompt": "Where was Angelina Jolie born?"}
       Messages:
         - Role: user
           Content:
-            - Text: "{% $prompt %}"
+            - Text: >-
+                {% 'Code this verbatim term: "' & $verbatim & '". Dictionary='
+                & $dictionary & ' version=' & $dictionaryVersion & '.' %}
 
       # --- Optional: business logic for this demo needs these ---
       Tools:
@@ -73,74 +118,160 @@ States:
               GatewayArn: "${GatewayArn}"
       # Gateway-sourced tools are scoped with the `@server/tool` pattern,
       # where `server` is this tool entry's `Name` ("gateway") and `tool` is
-      # the REAL fully-qualified MCP tool name (confirmed live via the
-      # Gateway's own tools/list endpoint): "{target_name}___{tool_name}"
-      # (triple underscore) - our target is named "get-weather" (see
-      # coding-gateway.ts's gatewayTargetName), tool is "get_weather", so the
-      # real name is "get-weather___get_weather", NOT bare "get_weather".
-      # Root cause of an earlier bug: AllowedTools previously listed the bare
-      # tool name, which matched nothing, so the tool was silently filtered
-      # out and the model never saw it as available - it fell back to
-      # answering from its own "knowledge" instead of erroring, which looked
-      # like a model-behavior problem but was actually this naming mismatch.
-      # Verified fixed via a direct boto3 invoke_harness call replicating this
-      # exact payload outside Step Functions: with the correct name below,
-      # the model calls the tool (stopReason: tool_use) and relays its real
-      # result verbatim.
+      # the REAL fully-qualified MCP tool name: "{target_name}___{tool_name}"
+      # (triple underscore) - the target is named "search-dictionary" (see
+      # coding-gateway.ts's gatewayTargetName), the tool is
+      # "search_dictionary", so the real name is
+      # "search-dictionary___search_dictionary", NOT bare "search_dictionary".
+      # Root cause of an earlier bug with a previous placeholder tool:
+      # AllowedTools listed the bare tool name, which matched nothing, so the
+      # tool was silently filtered out and the model fell back to answering
+      # from its own "knowledge" instead of erroring.
       AllowedTools:
-        - "@gateway/get-weather___get_weather"
-      # Tightly scoped to weather only. Off-topic prompts must return exactly
-      # {} - not a refusal ("I can't help"), not the real answer, not a tool
-      # call. Verified live against off-topic (people/math/climate), prompt
-      # injection, and rephrased-weather cases via direct invoke_harness.
+        - "@gateway/search-dictionary___search_dictionary"
+      # Ported from the blog's AGENT_PROMPT, tightened with the hard
+      # constraints this sample already used: the agent must ground its
+      # answer in real search_dictionary results and copy every value
+      # verbatim. Unlike an "abstain" prompt, it always returns the top
+      # candidate - even at a low score - and lets the workflow's
+      # ScoreThreshold Choice state (configuration, not model judgment)
+      # decide autocode vs human review vs open. WriteBack additionally
+      # validates that a non-open result carries a dict_term_code, so
+      # fabricated or empty answers stand out.
       SystemPrompt:
         - Text: |-
-            You are a weather-only assistant. You have exactly one capability:
-            reporting the current temperature by calling the get_weather tool
-            (it takes no arguments).
+            You are a clinical medical-coding assistant. You have exactly one
+            capability: matching a free-text verbatim term to its best
+            dictionary entry by calling the search_dictionary tool.
 
             Rules, in order of priority:
-            1. If the user's message is a request about the current weather or
-               temperature, call get_weather and respond with ONLY this JSON
-               object: {"temperature":"<exact value returned by get_weather>"}
-            2. For ANY other message - any topic that is not the current
-               weather (people, places, history, math, general knowledge,
-               etc.) - respond with ONLY this exact empty JSON object: {}
+            1. The user's message contains a verbatim term, a dictionary name
+               and a dictionary version. Call search_dictionary exactly once
+               with that verbatim term (exactly as given, do not correct
+               spelling) and that dictionary and dictionary_version.
+            2. From the returned matches, select the SINGLE candidate that
+               best fits the verbatim's clinical meaning. If nothing is a
+               good fit, still select the top candidate - its low score lets
+               the caller decide; never abstain and never answer from your
+               own knowledge.
+            3. Respond with ONLY this JSON object, copying every value
+               EXACTLY as returned by the tool for your selected candidate:
+               {"dict_term":"<dict_term>","dict_term_type":"<dict_term_type>","dict_term_code":"<dict_term_code>","derivation":"<derivation>","hierarchy":<hierarchy>,"score":<score>}
 
             Hard constraints:
-            - Never answer a non-weather question, even if you know the answer.
+            - Never invent, alter, or "correct" codes, names, hierarchies or
+              scores - copy them verbatim from the tool output.
             - Never explain, apologize, or say you don't know or can't help.
-            - Never call get_weather for a non-weather question.
             - Output ONLY the JSON object. No prose, no markdown code fences,
               no leading or trailing text.
-
-      # --- Optional: not needed yet, left as reference ---
-      # ActorId: "<per-invocation actor id, e.g. a provider/user id, for memory scoping>"
-      # MaxIterations: 10
-      # MaxTokens: 1024
-      # Model:
-      #   BedrockModelConfig:
-      #     ModelId: "us.anthropic.claude-sonnet-4-6"
-      #     Temperature: 0.7
-      # Skills: []
-      # TimeoutSeconds: 300
+    Assign:
+      # The final assistant text is the JSON object the system prompt
+      # mandates. $parse of a malformed answer raises
+      # States.QueryEvaluationError -> Catch -> MarkOpen.
+      agentCandidate: "{% $parse($states.result.Output.Message.Content[0].Text) %}"
+      # Normalized routing score: a missing or non-numeric score counts as 0,
+      # so ScoreThreshold (a Choice state, which cannot Catch) never errors.
+      agentScore: >-
+        {% ($s := $parse($states.result.Output.Message.Content[0].Text).score;
+        $type($s) = 'number' ? $s : 0) %}
     Retry:
-      - ErrorEquals: ["BedrockAgentCore.ThrottlingException"]
-        IntervalSeconds: 2
+      - ErrorEquals:
+          - BedrockAgentCore.ThrottlingException
+          - BedrockAgentCore.InternalServerException
+        IntervalSeconds: 3
         MaxAttempts: 3
         BackoffRate: 2.0
-    Next: Finalize
+    Catch:
+      - ErrorEquals: ["States.ALL"]
+        Next: MarkOpen
+    Next: ScoreThreshold
 
-  # Extracts just the agent's final assistant text from the invokeHarness
-  # result ($states.input here is CodingAgent's output, i.e. the harness
-  # response) and hands it to the Lambda. Output is reshaped to just the
-  # Lambda's Payload so the execution result is a clean {result: ...}.
-  Finalize:
+  # Route on the agent's confidence score. Thresholds are configuration in
+  # the state machine definition, not code - tune them without touching the
+  # agent. CASE D (>= 0.90) autocode; CASE E (0.70-0.90) human review;
+  # CASE F (< 0.70) leave open for manual coding.
+  ScoreThreshold:
+    Type: Choice
+    Choices:
+      - Condition: "{% $agentScore >= 0.9 %}"
+        Next: WriteBack
+      - Condition: "{% $agentScore >= 0.7 %}"
+        Next: MarkForReview
+    Default: MarkOpen
+
+  # State 4 (write-back) - persist the code onto the study_terms row in
+  # place: status=autocoded, dict_term, dict_term_code, derivation,
+  # hierarchy, match_score. Reached from both paths; JSONata conditionals
+  # only evaluate the selected branch, so referencing $agentCandidate is
+  # safe when arriving from the deterministic hit. For derivation_only=true
+  # (WHODrug/EDC, CASE H) only derivation + hierarchy are written. WriteBack
+  # rejects a candidate without a dict_term_code (fabrication guard); the
+  # Catch turns that into MarkOpen so the record safely stays open.
+  WriteBack:
     Type: Task
     Resource: arn:aws:states:::lambda:invoke
     Arguments:
-      FunctionName: "${FinalizeFunctionArn}"
+      FunctionName: "${WriteBackFunctionArn}"
       Payload:
-        text: "{% $states.input.Output.Message.Content[0].Text %}"
+        record_id: "{% $recordId %}"
+        target_status: autocoded
+        candidate: "{% $direct.matched ? $direct.candidate : $agentCandidate %}"
+        derivation_only: "{% $derivationOnly %}"
     Output: "{% $states.result.Payload %}"
+    Retry:
+      - ErrorEquals:
+          - Lambda.TooManyRequestsException
+          - Lambda.ServiceException
+        IntervalSeconds: 2
+        MaxAttempts: 3
+        BackoffRate: 2.0
+    Catch:
+      - ErrorEquals: ["States.ALL"]
+        Next: MarkOpen
+    End: true
+
+  # Write the candidate code and set status=approval_required so it surfaces
+  # in the human coder queue for one-click confirm/override.
+  MarkForReview:
+    Type: Task
+    Resource: arn:aws:states:::lambda:invoke
+    Arguments:
+      FunctionName: "${WriteBackFunctionArn}"
+      Payload:
+        record_id: "{% $recordId %}"
+        target_status: approval_required
+        candidate: "{% $agentCandidate %}"
+        derivation_only: "{% $derivationOnly %}"
+    Output: "{% $states.result.Payload %}"
+    Retry:
+      - ErrorEquals:
+          - Lambda.TooManyRequestsException
+          - Lambda.ServiceException
+        IntervalSeconds: 2
+        MaxAttempts: 3
+        BackoffRate: 2.0
+    Catch:
+      - ErrorEquals: ["States.ALL"]
+        Next: MarkOpen
+    End: true
+
+  # No confident code (or an upstream error). Leave status=open for a human
+  # coder. Terminal, non-failing - an un-coded term is a valid business
+  # outcome, not a workflow failure.
+  MarkOpen:
+    Type: Task
+    Resource: arn:aws:states:::lambda:invoke
+    Arguments:
+      FunctionName: "${WriteBackFunctionArn}"
+      Payload:
+        record_id: "{% $recordId %}"
+        target_status: open
+    Output: "{% $states.result.Payload %}"
+    Retry:
+      - ErrorEquals:
+          - Lambda.TooManyRequestsException
+          - Lambda.ServiceException
+        IntervalSeconds: 2
+        MaxAttempts: 3
+        BackoffRate: 2.0
     End: true

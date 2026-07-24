@@ -13,8 +13,7 @@
     "watch": "tsc -w",
     "test": "jest",
     "cdk": "cdk",
-    "seed": "tsx scripts/seed.ts",
-    "finalize-encounter": "tsx scripts/finalize-encounter.ts"
+    "seed": "python3 scripts/seed.py"
   },
   "devDependencies": {
     "@types/aws-lambda": "latest",
@@ -30,8 +29,10 @@
   "dependencies": {
     "@aws-lambda-powertools/signer": "latest",
     "@aws-sdk/client-bedrock-agent": "latest",
+    "@aws-sdk/client-bedrock-runtime": "^3.1092.0",
     "@aws-sdk/client-cloudformation": "latest",
     "@aws-sdk/client-dynamodb": "^3.1087.0",
+    "@aws-sdk/client-rds-data": "^3.1092.0",
     "@aws-sdk/client-s3": "^3.1087.0",
     "@aws-sdk/client-sts": "latest",
     "@aws-sdk/lib-dynamodb": "^3.1087.0",

@@ -1,0 +1,31 @@
+case_id,case_name,stage,table,verbatim,dict_term,dict_term_type,dict_term_code,derivation,status,match_score,notes
+A,exact_match_autocoded,input,study_terms,Dislocated shoulder,,,,,open,,AE verbatim ingested from EDC awaiting coding
+A,exact_match_autocoded,tna_guard,terms_not_to_autocode,Dislocated shoulder,,,,,,,no block-list hit -> continue
+A,exact_match_autocoded,exact_match,dictionary_terms,Dislocated shoulder,Dislocated shoulder,LLT,10013156,Dislocated shoulder,,1.00,unique LLT exact match; carries promotion to PT Joint dislocation (10023204)
+A,exact_match_autocoded,output,study_terms,Dislocated shoulder,Dislocated shoulder,LLT,10013156,Dislocated shoulder,autocoded,1.00,"status_changed_by=autocoding-workflow (machine coded, no human)"
+B,synonym_match_autocoded,input,study_terms,Hypothyroid,,,,,open,,'Hypothyroid' is not a valid MedDRA term on its own
+B,synonym_match_autocoded,tna_guard,terms_not_to_autocode,Hypothyroid,,,,,,,no block-list hit -> continue
+B,synonym_match_autocoded,synonym,synonym_list,Hypothyroid,Hypothyroidism,PT,10021114,Hypothyroidism,active,1.00,curated synonym pins verbatim to real PT code 10021114
+B,synonym_match_autocoded,output,study_terms,Hypothyroid,Hypothyroidism,PT,10021114,Hypothyroidism,autocoded,1.00,synonym-driven exact match; machine coded
+C,tna_block_open,input,study_terms,HAEMORRHAGE,,,,,open,,verbatim ingested awaiting coding
+C,tna_block_open,tna_guard,terms_not_to_autocode,HAEMORRHAGE,,,,,active,,BLOCK-list hit -> autocoder returns nothing
+C,tna_block_open,output,study_terms,HAEMORRHAGE,,,,,open,,"stays open for a human coder (safety block, not 'no match')"
+D,agent_semantic_autocoded,input,study_terms,migrane,,,,,open,,typo of 'migraine'; no exact/synonym hit
+D,agent_semantic_autocoded,tna_guard,terms_not_to_autocode,migrane,,,,,,,no block-list hit -> continue
+D,agent_semantic_autocoded,agent_search,dictionary_terms,migrane,Migraine,PT,10027599,Migraine,,0.94,AgentCore semantic search over pgvector; score >= autocode threshold (0.90)
+D,agent_semantic_autocoded,output,study_terms,migrane,Migraine,PT,10027599,Migraine,autocoded,0.94,machine coded via agent path
+E,agent_semantic_review,input,study_terms,flutters in my chest sometimes,,,,,open,,verbose lay description; no exact/synonym hit
+E,agent_semantic_review,agent_search,dictionary_terms,flutters in my chest sometimes,Cardiac flutter,PT,10052840,Cardiac flutter,,0.78,score between review (0.70) and autocode (0.90) thresholds
+E,agent_semantic_review,output,study_terms,flutters in my chest sometimes,Cardiac flutter,PT,10052840,Cardiac flutter,approval_required,0.78,routed to a human coder for one-click confirm/override
+F,no_confident_match_open,input,study_terms,asdfghjkl,,,,,open,,garbage verbatim
+F,no_confident_match_open,agent_search,dictionary_terms,asdfghjkl,,,,,,0.05,top candidate below review threshold (0.70)
+F,no_confident_match_open,output,study_terms,asdfghjkl,,,,,open,,left open for manual coding (score not persisted on the open path)
+G,whodrug_exact_autocoded,input,study_terms,ibuprofen,,,,,open,,"con-med verbatim, WHODrug"
+G,whodrug_exact_autocoded,exact_match,dictionary_terms,ibuprofen,IBUPROFEN,generic name,00109201001,IBUPROFEN,,1.00,unique generic-name exact match; ATC M01AE PROPIONIC ACID DERIVATIVES
+G,whodrug_exact_autocoded,output,study_terms,ibuprofen,IBUPROFEN,generic name,00109201001,IBUPROFEN,autocoded,1.00,machine coded
+H,derivation_only,input,study_terms,FULVESTRANT,,,,,open,,derivation_only=True (from_source=EDC + dict=WHODrug)
+H,derivation_only,exact_match,dictionary_terms,FULVESTRANT,FULVESTRANT,generic name,01503001001,FULVESTRANT,,1.00,exact 1:1 match required; ATC L02BA ANTI-ESTROGENS
+H,derivation_only,output,study_terms,FULVESTRANT,,,,FULVESTRANT,autocoded,1.00,"updates ONLY derivation + ATC hierarchy, never a new dict_term"
+I,human_review_approved,input,study_terms,nexiuum,,,,,open,,misspelling; WHODrug con-med
+I,human_review_approved,agent_search,dictionary_terms,nexiuum,NEXIM,trade name,00101801382,TRANEXAMIC ACID,,0.71,agent proposes NEXIM at review-tier confidence (0.70-0.90) -> approval_required
+I,human_review_approved,output,study_terms,nexiuum,NEXIM,trade name,00101801382,TRANEXAMIC ACID,approved,0.71,status_changed_by=medical-coder-01 (human) confirms the proposed code; final derivation TRANEXAMIC ACID is NEXIM's generic ingredient
