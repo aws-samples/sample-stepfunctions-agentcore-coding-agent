@@ -39,6 +39,13 @@ interface WriteBackInput {
   target_status: 'autocoded' | 'approval_required' | 'open';
   candidate?: Candidate | null;
   derivation_only?: boolean;
+  /**
+   * The dictionary and version the term is coded against. When present, the
+   * selected code is verified to exist in that dictionary before it is
+   * persisted (see verifyCodeExists).
+   */
+  encoding_dictionary?: string | null;
+  encoding_dictionary_version?: string | null;
 }
 
 interface WriteBackResult {
@@ -71,6 +78,25 @@ export const handler = async (event: WriteBackInput): Promise<WriteBackResult> =
     throw new Error(
       `WriteBack(${target}) candidate is missing a valid "dict_term_code" - the model may ` +
         `not have relayed real search_dictionary output. Candidate: ${JSON.stringify(cand)}`
+    );
+  }
+
+  // Fabrication guard: the chosen code must actually exist in the dictionary
+  // being coded against. Prompt text is guidance; this is the gate. It
+  // matters more now that the agent also reads study metadata - free-text
+  // context is exactly the kind of input that invites plausible invention,
+  // e.g. copying a code out of a study description.
+  //
+  // Note this checks existence, not candidate membership: invokeHarness
+  // returns only the model's final message, not its tool results, so the
+  // workflow cannot know which codes search_dictionary actually returned. A
+  // code that exists in the right dictionary and version is the strongest
+  // check available on this side of the boundary.
+  if (event.encoding_dictionary && event.encoding_dictionary_version) {
+    await verifyCodeExists(
+      cand.dict_term_code,
+      event.encoding_dictionary,
+      event.encoding_dictionary_version
     );
   }
 
@@ -132,6 +158,39 @@ export const handler = async (event: WriteBackInput): Promise<WriteBackResult> =
     dict_term_code: cand.dict_term_code,
     score: cand.score ?? null,
   };
+};
+
+/**
+ * Throws unless the code exists in the given dictionary + version as a
+ * non-prior-index entry. The state's Catch turns that into MarkOpen, so a
+ * fabricated code leaves the record safely open with the reason in the
+ * execution history.
+ */
+const verifyCodeExists = async (
+  code: string,
+  dictionary: string,
+  version: string
+): Promise<void> => {
+  const rows = await executeStatement(
+    `SELECT 1 AS hit
+     FROM dictionary_terms
+     WHERE dictionary = :dictionary
+       AND dictionary_version = :version
+       AND dict_term_code = :code
+       AND is_prior_index = FALSE
+     LIMIT 1`,
+    [
+      { name: 'dictionary', value: { stringValue: dictionary } },
+      { name: 'version', value: { stringValue: version } },
+      { name: 'code', value: { stringValue: code } },
+    ]
+  );
+  if (rows.length === 0) {
+    throw new Error(
+      `WriteBack refused code ${code}: not found in ${dictionary} ${version} ` +
+        `(the model may have invented it or taken it from non-dictionary context).`
+    );
+  }
 };
 
 const markOpen = async (recordId: string): Promise<void> => {

@@ -13,15 +13,16 @@ export interface CodingLambdasProps {
 
 /**
  * Lambdas backing the medical-coding workflow: the deterministic direct
- * lookup (terms-not-to-autocode block-list + exact/synonym match), the
- * Gateway-fronted pgvector dictionary search tool, and the write-back step
- * that persists the coding outcome onto the study_terms row. All database
- * access goes through the RDS Data API (no VPC attachment) - see
- * lib/constructs/coding-database.ts.
+ * lookup (terms-not-to-autocode block-list + exact/synonym match), the two
+ * Gateway-fronted agent tools (pgvector dictionary search and study-metadata
+ * lookup), and the write-back step that persists the coding outcome onto the
+ * study_terms row. All database access goes through the RDS Data API (no VPC
+ * attachment) - see lib/constructs/coding-database.ts.
  */
 export class CodingLambdas extends Construct {
   public readonly checkDirectFn: nodejs.NodejsFunction;
   public readonly dictionarySearchFn: nodejs.NodejsFunction;
+  public readonly studyInfoFn: nodejs.NodejsFunction;
   public readonly writeBackFn: nodejs.NodejsFunction;
 
   constructor(scope: Construct, id: string, props: CodingLambdasProps) {
@@ -66,6 +67,12 @@ export class CodingLambdas extends Construct {
       'tools/dictionarySearch',
       dbEnvironment
     );
+    this.studyInfoFn = fn(
+      'StudyInfoFn',
+      'coding-demo-tool-study-info',
+      'tools/studyInfo',
+      dbEnvironment
+    );
     this.writeBackFn = fn(
       'WriteBackFn',
       'coding-demo-write-back',
@@ -73,9 +80,15 @@ export class CodingLambdas extends Construct {
       dbEnvironment
     );
 
-    // Data API + secret read - all three functions touch the database
-    // (writeBack updates study_terms in place).
-    for (const dbFn of [this.checkDirectFn, this.dictionarySearchFn, this.writeBackFn]) {
+    // Data API + secret read - all four functions touch the database
+    // (writeBack updates study_terms in place; studyInfo reads
+    // study_metadata).
+    for (const dbFn of [
+      this.checkDirectFn,
+      this.dictionarySearchFn,
+      this.studyInfoFn,
+      this.writeBackFn,
+    ]) {
       cluster.grantDataApiAccess(dbFn);
     }
 

@@ -33,12 +33,18 @@ decision:
    against `dictionary_terms` + `synonym_list` — accepted only if it resolves to
    exactly one distinct code. Most verbatims are coded here, cheaply and
    reproducibly, with a score of 1.00.
-2. **Agentic semantic search** (AgentCore Harness), only for verbatims the
-   deterministic path missed. The harness is declared directly in the Step
-   Functions task state — model, system prompt, and its one tool
-   (`search_dictionary`, a pgvector cosine-similarity search over
-   `dictionary_terms`, exposed through an AgentCore Gateway) — with no container to
-   build or operate.
+2. **Agentic semantic search and adjudication** (AgentCore Harness), only for
+   verbatims the deterministic path missed. The harness is declared directly in
+   the Step Functions task state — model, system prompt, and two tools exposed
+   through an AgentCore Gateway, with no container to build or operate:
+   `search_dictionary` (pgvector cosine-similarity search over
+   `dictionary_terms`) and `get_study_info` (the study's free-text metadata
+   description). The second tool exists because similarity search can return
+   several clinically plausible candidates it cannot separate on text alone —
+   a human coder breaks that tie using study context, and this gives the agent
+   the same context. Choosing among close candidates is the part that resists
+   being written as code, which is why this step is an agent rather than
+   another Lambda.
 3. **Score-threshold routing** (Choice state, configuration not model judgment):
    high confidence autocodes, medium confidence routes to a human review queue,
    low confidence leaves the term open.
@@ -54,7 +60,7 @@ one bounded step and cannot skip a gate or reorder the workflow. See
 
 ## Data model
 
-One Aurora PostgreSQL (Serverless v2) cluster, four tables, accessed entirely through
+One Aurora PostgreSQL (Serverless v2) cluster, five tables, accessed entirely through
 the RDS Data API (no VPC attachment needed by the Lambdas):
 
 | Table | Role |
@@ -62,7 +68,8 @@ the RDS Data API (no VPC attachment needed by the Lambdas):
 | `dictionary_terms` | The target vocabulary (MedDRA LLT/PT or WHODrug trade/generic names), each row carrying its full hierarchy (`JSONB`) and a Titan v2 embedding (`VECTOR(1024)`, HNSW index) of its normalized text. |
 | `synonym_list` | Curated verbatim → code shortcuts that widen "exact match" beyond literal dictionary text (e.g. `"Hypothyroid"` → Hypothyroidism / `10021114`). |
 | `terms_not_to_autocode` | The safety block-list, checked first — a hit is a deliberate "never auto-assign," not "no match found." |
-| `study_terms` | The work queue: one row per verbatim, holding both the input (verbatim, dictionary, version) and the coding output (status, code, hierarchy, score) on the same row. |
+| `study_terms` | The work queue: one row per verbatim, holding both the input (verbatim, dictionary, version, study) and the coding output (status, code, hierarchy, score) on the same row. |
+| `study_metadata` | What each trial is about, in prose — three columns (id, study name, description). Read by `get_study_info` so the agent can break ties between candidate terms. Joined to `study_terms.source_study` by name. |
 
 See `lib/constructs/coding-database.ts` for the CDK-managed cluster and
 `scripts/seed.ts` for the schema DDL and sample data loader.
@@ -81,6 +88,7 @@ lib/
 lambda/
 ├── checkDirect/                      # State 1 — block-list + exact/synonym match
 ├── tools/dictionarySearch/           # Gateway tool — pgvector semantic search
+├── tools/studyInfo/                  # Gateway tool — study metadata lookup
 ├── writeBack/                        # State 4 — persist outcome to study_terms
 └── shared/dataApi.ts                 # RDS Data API helper
 state-machine/
@@ -93,7 +101,8 @@ data/
 ├── synonym_list.csv                  # (2) curated verbatim -> code
 ├── terms_not_to_autocode.csv         # (3) block-list
 ├── study_terms_input.csv             # (4) input verbatims to code
-├── golden_walkthrough.csv            # (5) 9 traced cases A-I (the tests below)
+├── study_metadata.csv                # (5) study context for disambiguation
+├── golden_walkthrough.csv            # (6) 9 traced cases A-I (the tests below)
 └── generate_sample_data.py           # regenerates every CSV above
 ```
 
@@ -166,7 +175,8 @@ DB_NAME=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$RE
 # 1. Look up the record_id for the case you want to run (e.g. case D, "migrane")
 aws rds-data execute-statement --region "$REGION" \
   --resource-arn "$CLUSTER_ARN" --secret-arn "$SECRET_ARN" --database "$DB_NAME" \
-  --sql "SELECT record_id, verbatim, encoding_dictionary, encoding_dictionary_version, derivation_only
+  --sql "SELECT record_id, verbatim, encoding_dictionary, encoding_dictionary_version,
+                source_study, derivation_only
          FROM study_terms WHERE verbatim = 'migrane'"
 
 # 2. Start an execution with that row's fields as input
@@ -178,6 +188,7 @@ aws stepfunctions start-execution --region "$REGION" \
     "verbatim": "migrane",
     "encoding_dictionary": "MedDRA",
     "encoding_dictionary_version": "v27.0",
+    "source_study": "ONCO-2024-01",
     "derivation_only": false
   }'
 # -> returns an executionArn; save it
@@ -207,7 +218,8 @@ execution per row — this is the fastest way to exercise every branch in one pa
 ```bash
 RECORDS=$(aws rds-data execute-statement --region "$REGION" \
   --resource-arn "$CLUSTER_ARN" --secret-arn "$SECRET_ARN" --database "$DB_NAME" \
-  --sql "SELECT record_id, verbatim, encoding_dictionary, encoding_dictionary_version, derivation_only
+  --sql "SELECT record_id, verbatim, encoding_dictionary, encoding_dictionary_version,
+                source_study, derivation_only
          FROM study_terms WHERE status = 'open' ORDER BY record_id" \
   --query "records" --output json)
 
@@ -216,7 +228,8 @@ echo "$RECORDS" | jq -c '.[] | {
   verbatim: .[1].stringValue,
   encoding_dictionary: .[2].stringValue,
   encoding_dictionary_version: .[3].stringValue,
-  derivation_only: .[4].booleanValue
+  source_study: .[4].stringValue,
+  derivation_only: .[5].booleanValue
 }' | while read -r input; do
   aws stepfunctions start-execution --region "$REGION" \
     --state-machine-arn "$SM_ARN" \
@@ -249,12 +262,19 @@ aws stepfunctions get-execution-history --region "$REGION" \
 Two states worth checking directly when a semantic-search case (D, E, F, I) doesn't
 land where expected:
 
-- **CodingAgent's raw tool output** — invoke the Gateway tool directly to see the
-  top-k candidates and their cosine scores without going through the LLM:
+- **CodingAgent's raw tool output** — invoke either Gateway tool directly to see
+  what the agent sees, without going through the LLM:
   ```bash
+  # candidates + cosine scores
   aws lambda invoke --region "$REGION" \
     --function-name coding-demo-tool-dictionary-search \
     --payload '{"verbatim_term":"migrane","dictionary":"MedDRA","dictionary_version":"v27.0","top_k":5}' \
+    --cli-binary-format raw-in-base64-out /dev/stdout
+
+  # study context used to break ties
+  aws lambda invoke --region "$REGION" \
+    --function-name coding-demo-tool-study-info \
+    --payload '{"study_name":"ONCO-2024-01"}' \
     --cli-binary-format raw-in-base64-out /dev/stdout
   ```
 - **The agent's parsed answer** — in the execution history, the `invokeHarness`

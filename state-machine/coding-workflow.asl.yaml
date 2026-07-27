@@ -22,7 +22,13 @@ States:
   #   {"record_id": "...", "verbatim": "migrane",
   #    "encoding_dictionary": "MedDRA",
   #    "encoding_dictionary_version": "v27.0",
+  #    "source_study": "ONCO-2024-01",
   #    "derivation_only": false}
+  #
+  # source_study is what the agent passes to get_study_info. Every term
+  # entering the agentic path must carry the verbatim, the dictionary it is
+  # coded against, AND the study it belongs to - the study is what lets the
+  # agent break ties the dictionary text alone cannot.
   CaptureInput:
     Type: Pass
     Assign:
@@ -30,6 +36,7 @@ States:
       verbatim: "{% $states.input.verbatim %}"
       dictionary: "{% $states.input.encoding_dictionary %}"
       dictionaryVersion: "{% $states.input.encoding_dictionary_version %}"
+      study: "{% $states.input.source_study %}"
       # equality with a missing field is false, so this normalizes an
       # omitted derivation_only to false
       derivationOnly: "{% $states.input.derivation_only = true %}"
@@ -86,13 +93,22 @@ States:
   # specified. See
   # https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_InvokeHarness.html
   #
-  # The agent's only tool is search_dictionary (pgvector cosine kNN over the
-  # dictionary_terms embedding column, via the Gateway). It returns the
-  # single best candidate as JSON; the Assign below parses that text and
-  # normalizes the confidence score, and ScoreThreshold routes on it. A
-  # malformed (non-JSON) answer fails the $parse in Assign, which the Catch
-  # routes to MarkOpen - "no confident code" is a valid, deliberate outcome,
-  # not a workflow failure.
+  # The agent has two tools, both via the Gateway:
+  #   search_dictionary - pgvector cosine kNN over the dictionary_terms
+  #                       embedding column; returns candidate terms
+  #   get_study_info    - the study's free-text metadata description
+  #
+  # The second tool exists because similarity search can return several
+  # clinically plausible candidates it cannot separate on text alone. A human
+  # coder breaks that tie using study context; this gives the agent the same
+  # context. Selecting among close candidates is the part that cannot be
+  # reduced to code, which is why this step is an agent and not a Lambda.
+  #
+  # The agent returns the single chosen candidate as JSON; the Assign below
+  # parses that text and normalizes the confidence score, and ScoreThreshold
+  # routes on it. A malformed (non-JSON) answer fails the $parse in Assign,
+  # which the Catch routes to MarkOpen - "no confident code" is a valid,
+  # deliberate outcome, not a workflow failure.
   CodingAgent:
     Type: Task
     Resource: arn:aws:states:::bedrockagentcore:invokeHarness
@@ -107,7 +123,8 @@ States:
           Content:
             - Text: >-
                 {% 'Code this verbatim term: "' & $verbatim & '". Dictionary='
-                & $dictionary & ' version=' & $dictionaryVersion & '.' %}
+                & $dictionary & ' version=' & $dictionaryVersion
+                & ' study=' & $study & '.' %}
 
       # --- Optional: business logic for this demo needs these ---
       Tools:
@@ -119,59 +136,100 @@ States:
       # Gateway-sourced tools are scoped with the `@server/tool` pattern,
       # where `server` is this tool entry's `Name` ("gateway") and `tool` is
       # the REAL fully-qualified MCP tool name: "{target_name}___{tool_name}"
-      # (triple underscore) - the target is named "search-dictionary" (see
-      # coding-gateway.ts's gatewayTargetName), the tool is
-      # "search_dictionary", so the real name is
-      # "search-dictionary___search_dictionary", NOT bare "search_dictionary".
+      # (triple underscore) - the targets are named "search-dictionary" and
+      # "study-info" (see coding-gateway.ts's gatewayTargetName), the tools
+      # are "search_dictionary" and "get_study_info", so the real names are
+      # "search-dictionary___search_dictionary" and
+      # "study-info___get_study_info", NOT the bare tool names.
       # Root cause of an earlier bug with a previous placeholder tool:
       # AllowedTools listed the bare tool name, which matched nothing, so the
       # tool was silently filtered out and the model fell back to answering
       # from its own "knowledge" instead of erroring.
       AllowedTools:
         - "@gateway/search-dictionary___search_dictionary"
+        - "@gateway/study-info___get_study_info"
       # A coding prompt with hard constraints: the agent must ground its
       # answer in real search_dictionary results and copy every value
-      # verbatim. Unlike an "abstain" prompt, it always returns the top
-      # candidate - even at a low score - and lets the workflow's
-      # ScoreThreshold Choice state (configuration, not model judgment)
-      # decide autocode vs human review vs open. WriteBack additionally
-      # validates that a non-open result carries a dict_term_code, so
-      # fabricated or empty answers stand out.
+      # verbatim. Study metadata is context for CHOOSING among those
+      # candidates - never a source of codes. Unlike an "abstain" prompt, it
+      # always returns a candidate - even at a low score - and lets the
+      # workflow's ScoreThreshold Choice state (configuration, not model
+      # judgment) decide autocode vs human review vs open. WriteBack
+      # additionally validates that a non-open result carries a
+      # dict_term_code, so fabricated or empty answers stand out.
       SystemPrompt:
         - Text: |-
-            You are a clinical medical-coding assistant. You have exactly one
-            capability: matching a free-text verbatim term to its best
-            dictionary entry by calling the search_dictionary tool.
+            You are a clinical medical-coding expert. Your goal is to code one
+            free-text verbatim term against one specified dictionary, for one
+            specified study, by choosing the best entry from the candidates a
+            search tool returns.
+
+            You have two tools:
+            - search_dictionary: returns candidate dictionary entries for a
+              verbatim term, with codes, hierarchies and similarity scores.
+            - get_study_info: returns a study's name and its free-text
+              metadata description (therapeutic area, adverse events of
+              special interest, expected concomitant medications).
 
             Rules, in order of priority:
-            1. The user's message contains a verbatim term, a dictionary name
-               and a dictionary version. Call search_dictionary exactly once
-               with that verbatim term (exactly as given, do not correct
-               spelling) and that dictionary and dictionary_version.
-            2. From the returned matches, select the SINGLE candidate that
-               best fits the verbatim's clinical meaning. If nothing is a
-               good fit, still select the top candidate - its low score lets
+            1. The user's message contains a verbatim term, a dictionary
+               name, a dictionary version and a study. Call
+               search_dictionary FIRST, with that verbatim term (exactly as
+               given, do not correct spelling) and that dictionary and
+               dictionary_version.
+            2. If exactly one candidate clearly fits the verbatim's clinical
+               meaning, select it and skip step 3.
+            3. If several candidates are clinically plausible, or the top
+               candidates differ in body system / drug class, call
+               get_study_info once with the study from the user's message.
+               Use the study description - what the trial is investigating,
+               which events it monitors, which medications are expected - to
+               judge which candidate best fits this study's clinical context,
+               the way a human coder who knows the study would.
+            4. Select the SINGLE best candidate. If nothing is a good fit,
+               still select the top-scoring candidate - its low score lets
                the caller decide; never abstain and never answer from your
                own knowledge.
-            3. Respond with ONLY this JSON object, copying every value
-               EXACTLY as returned by the tool for your selected candidate:
-               {"dict_term":"<dict_term>","dict_term_type":"<dict_term_type>","dict_term_code":"<dict_term_code>","derivation":"<derivation>","hierarchy":<hierarchy>,"score":<score>}
+            5. Respond with ONLY this JSON object, copying every value
+               EXACTLY as returned by search_dictionary for your selected
+               candidate:
+               {"dict_term":"<dict_term>","dict_term_type":"<dict_term_type>","dict_term_code":"<dict_term_code>","derivation":"<derivation>","hierarchy":<hierarchy>,"score":<score>,"rationale":"<one sentence>"}
 
             Hard constraints:
+            - Your dict_term_code MUST be one of the codes search_dictionary
+              returned. Never output a code that was not among those
+              candidates.
+            - Study metadata is context for CHOOSING between candidates only.
+              It never introduces, replaces or overrides a code, and any term
+              or number appearing in a study description is NOT selectable.
             - Never invent, alter, or "correct" codes, names, hierarchies or
-              scores - copy them verbatim from the tool output.
+              scores - copy them verbatim from the search_dictionary output.
+            - In rationale, state in one sentence why you chose this
+              candidate, and name the study context if it drove the choice.
             - Never explain, apologize, or say you don't know or can't help.
-            - Output ONLY the JSON object. No prose, no markdown code fences,
-              no leading or trailing text.
+            - Output ONLY the JSON object. The FIRST character of your reply
+              must be "{" and the LAST must be "}". Put your reasoning in the
+              rationale field - never before or after the JSON. No preamble,
+              no summary, no markdown code fences.
     Assign:
-      # The final assistant text is the JSON object the system prompt
-      # mandates. $parse of a malformed answer raises
-      # States.QueryEvaluationError -> Catch -> MarkOpen.
-      agentCandidate: "{% $parse($states.result.Output.Message.Content[0].Text) %}"
+      # The assistant text should be exactly the JSON object the system prompt
+      # mandates, but models reliably drift into narrating before it once the
+      # prompt asks them to reason (an observed regression: adding the
+      # rationale field made every agent-path answer start with prose, so a
+      # bare $parse of the whole reply failed with "Invalid JSON" and the
+      # Catch below silently routed correctly-coded terms to MarkOpen).
+      # So extract the JSON object from the reply - greedy first "{" to last
+      # "}" - instead of trusting the model to emit nothing else. A reply with
+      # no JSON at all still raises States.QueryEvaluationError -> Catch ->
+      # MarkOpen, which is the intended "no confident code" outcome.
+      agentCandidate: >-
+        {% $parse($match($states.result.Output.Message.Content[0].Text,
+        /\{[\s\S]*\}/)[0].match) %}
       # Normalized routing score: a missing or non-numeric score counts as 0,
       # so ScoreThreshold (a Choice state, which cannot Catch) never errors.
       agentScore: >-
-        {% ($s := $parse($states.result.Output.Message.Content[0].Text).score;
+        {% ($s := $parse($match($states.result.Output.Message.Content[0].Text,
+        /\{[\s\S]*\}/)[0].match).score;
         $type($s) = 'number' ? $s : 0) %}
     Retry:
       - ErrorEquals:
@@ -216,6 +274,8 @@ States:
         target_status: autocoded
         candidate: "{% $direct.matched ? $direct.candidate : $agentCandidate %}"
         derivation_only: "{% $derivationOnly %}"
+        encoding_dictionary: "{% $dictionary %}"
+        encoding_dictionary_version: "{% $dictionaryVersion %}"
     Output: "{% $states.result.Payload %}"
     Retry:
       - ErrorEquals:
@@ -241,6 +301,8 @@ States:
         target_status: approval_required
         candidate: "{% $agentCandidate %}"
         derivation_only: "{% $derivationOnly %}"
+        encoding_dictionary: "{% $dictionary %}"
+        encoding_dictionary_version: "{% $dictionaryVersion %}"
     Output: "{% $states.result.Payload %}"
     Retry:
       - ErrorEquals:

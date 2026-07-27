@@ -2,8 +2,9 @@
 /**
  * Seed the coding demo's Aurora pgvector database from the sample CSVs.
  *
- * Creates the four-table autocoding schema (pgvector extension +
- * dictionary_terms / synonym_list / terms_not_to_autocode / study_terms),
+ * Creates the five-table autocoding schema (pgvector extension +
+ * dictionary_terms / synonym_list / terms_not_to_autocode / study_terms /
+ * study_metadata),
  * loads the fixture CSVs from data/, generates Titan Text Embeddings v2
  * vectors for each dictionary row, and stores them back - all through the
  * RDS Data API, so it runs from any machine with AWS credentials and no VPC
@@ -59,6 +60,7 @@ const DICTIONARY_CSVS = ['dictionary_terms_meddra.csv', 'dictionary_terms_whodru
 const SYNONYM_CSV = 'synonym_list.csv';
 const TNA_CSV = 'terms_not_to_autocode.csv';
 const STUDY_TERMS_CSV = 'study_terms_input.csv';
+const STUDY_METADATA_CSV = 'study_metadata.csv';
 
 // One Aurora instance stores BOTH the relational reference data AND its
 // embedding vectors (an extra vector column on dictionary_terms), so the
@@ -66,6 +68,7 @@ const STUDY_TERMS_CSV = 'study_terms_input.csv';
 // lives in.
 const SCHEMA_STATEMENTS = [
   'CREATE EXTENSION IF NOT EXISTS vector',
+  'DROP TABLE IF EXISTS study_metadata',
   'DROP TABLE IF EXISTS study_terms',
   'DROP TABLE IF EXISTS synonym_list',
   'DROP TABLE IF EXISTS terms_not_to_autocode',
@@ -161,6 +164,20 @@ const SCHEMA_STATEMENTS = [
   `,
   "CREATE INDEX ON study_terms (status)",
   'CREATE INDEX ON study_terms (source_study, source_domain)',
+  // 5) Study metadata - what the trial is actually about, in prose. Read by
+  //    the get_study_info Gateway tool and used by the agent to break ties
+  //    between candidate dictionary terms that similarity search cannot
+  //    separate (a human coder does the same thing: they know the study
+  //    context). Deliberately minimal: a surrogate id, the study name that
+  //    study_terms.source_study points at, and a free-text description.
+  `
+  CREATE TABLE study_metadata (
+      id                   INTEGER PRIMARY KEY,
+      study_name           TEXT NOT NULL,          -- matches study_terms.source_study
+      study_description    TEXT NOT NULL           -- therapeutic context, AEs of interest, expected con-meds
+  )
+  `,
+  'CREATE INDEX ON study_metadata (lower(study_name))',
 ];
 
 interface CsvRow {
@@ -439,22 +456,42 @@ const main = async (): Promise<number> => {
     console.log(`  ${row.source_domain}  '${row.verbatim}'  (${row.encoding_dictionary})`);
   }
 
+  console.log('Inserting study metadata...');
+  let studyMetadataRows = 0;
+  for (const row of readCsv(STUDY_METADATA_CSV)) {
+    await execute(
+      `
+      INSERT INTO study_metadata (id, study_name, study_description)
+      VALUES (:id, :study_name, :study_description)
+      `,
+      [
+        longParam('id', row.id),
+        stringParam('study_name', row.study_name),
+        stringParam('study_description', row.study_description),
+      ]
+    );
+    studyMetadataRows += 1;
+    console.log(`  ${row.study_name}  (${row.study_description.length} chars of description)`);
+  }
+
   console.log('Verifying...');
   const countsResult = await execute(`
     SELECT (SELECT count(*) FROM dictionary_terms)                                          AS dictionary_rows,
            (SELECT count(*) FROM dictionary_terms WHERE verbatim_text_embedding IS NOT NULL) AS embedded_rows,
            (SELECT count(*) FROM synonym_list)                                              AS synonyms,
            (SELECT count(*) FROM terms_not_to_autocode)                                     AS tna,
-           (SELECT count(*) FROM study_terms WHERE status = 'open')                         AS open_study_terms
+           (SELECT count(*) FROM study_terms WHERE status = 'open')                         AS open_study_terms,
+           (SELECT count(*) FROM study_metadata)                                            AS studies
   `);
   const counts = countsResult.records?.[0] ?? [];
-  const [dbDict, dbEmbedded, dbSyn, dbTna, dbStudy] = counts.map(fieldToLong);
+  const [dbDict, dbEmbedded, dbSyn, dbTna, dbStudy, dbStudyMeta] = counts.map(fieldToLong);
   console.log(
     `  dictionary rows: ${dbDict} (${dbEmbedded} embedded), synonyms: ${dbSyn}, ` +
-      `terms-not-to-autocode: ${dbTna}, open study terms: ${dbStudy}`
+      `terms-not-to-autocode: ${dbTna}, open study terms: ${dbStudy}, ` +
+      `study metadata rows: ${dbStudyMeta}`
   );
-  const expected = [dictionaryRows, dictionaryRows, synonymRows, tnaRows, studyRows];
-  const actual = [dbDict, dbEmbedded, dbSyn, dbTna, dbStudy];
+  const expected = [dictionaryRows, dictionaryRows, synonymRows, tnaRows, studyRows, studyMetadataRows];
+  const actual = [dbDict, dbEmbedded, dbSyn, dbTna, dbStudy, dbStudyMeta];
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     console.error(
       `ERROR: database counts ${JSON.stringify(actual)} do not match CSV rows ${JSON.stringify(expected)}`

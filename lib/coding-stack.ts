@@ -16,6 +16,7 @@ export class CodingStack extends Stack {
 
     const gateway = new CodingGateway(this, 'CodingGateway', {
       dictionarySearchFn: lambdas.dictionarySearchFn,
+      studyInfoFn: lambdas.studyInfoFn,
     });
 
     const harness = new CodingHarness(this, 'CodingHarness', {
