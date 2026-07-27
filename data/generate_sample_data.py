@@ -218,6 +218,34 @@ with open(os.path.join(HERE, "study_terms_input.csv"), "w", newline="") as f:
 
 
 # ---------------------------------------------------------------------------
+# Study metadata — what the trial is about, in prose. Read by the
+# get_study_info tool so the agent can break ties between candidate terms
+# that similarity search alone cannot separate. Deliberately minimal:
+# surrogate id, the study name study_terms.source_study points at, and a
+# free-text description.
+# ---------------------------------------------------------------------------
+STUDY_METADATA = [
+    (1, STUDY_AE,
+     "Phase 3 randomized open-label study of fulvestrant plus a CDK4/6 inhibitor "
+     "in postmenopausal women with hormone-receptor-positive, HER2-negative "
+     "advanced or metastatic breast cancer who progressed on prior endocrine "
+     "therapy. Adverse events of special interest include neutropenia, "
+     "hepatotoxicity, QT prolongation and other cardiac rhythm disturbances, "
+     "injection-site reactions, hot flushes, musculoskeletal pain, and fatigue. "
+     "Concomitant medications are commonly analgesics, antiemetics, "
+     "bisphosphonates, and endocrine agents. Cardiac and hepatic events are "
+     "actively monitored; endocrine and metabolic events are expected given the "
+     "mechanism of action."),
+]
+
+with open(os.path.join(HERE, "study_metadata.csv"), "w", newline="") as f:
+    w = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
+    w.writerow(["id", "study_name", "study_description"])
+    for sid, name, desc in STUDY_METADATA:
+        w.writerow([sid, name, desc])
+
+
+# ---------------------------------------------------------------------------
 # Encoded output examples (the OUTPUT shape) — real coded-data shape,
 # identifiers scrubbed. Shows the full CodingStatus lifecycle.
 # ---------------------------------------------------------------------------

@@ -29,12 +29,14 @@ anywhere — see [DISCLAIMER.md](DISCLAIMER.md) for the full scope statement.
   hierarchy), reproduced illustratively to show data shape — not a
   redistributable dictionary extract. See [DISCLAIMER.md](DISCLAIMER.md).
 
-## 3. Synonym List, Block-List, and Study Terms
+## 3. Synonym List, Block-List, Study Terms, and Study Metadata
 
 - **Source:** Authored for this repository; not sourced from any real trial,
-  sponsor, or coding standard.
+  sponsor, or coding standard. The study description in
+  `data/study_metadata.csv` describes a fictional trial.
 - **Files:** `data/synonym_list.csv`, `data/terms_not_to_autocode.csv`,
-  `data/study_terms_input.csv`, `data/golden_walkthrough.csv`
+  `data/study_terms_input.csv`, `data/study_metadata.csv`,
+  `data/golden_walkthrough.csv`
 - **Usage in this sample:** Illustrative fixtures that exercise every branch of
   the coding workflow (exact match, synonym match, block-list, semantic search
   at varying confidence, derivation-only mode). Entirely fabricated — see
