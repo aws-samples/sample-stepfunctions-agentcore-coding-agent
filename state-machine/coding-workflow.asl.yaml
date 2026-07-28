@@ -40,6 +40,9 @@ States:
       # equality with a missing field is false, so this normalizes an
       # omitted derivation_only to false
       derivationOnly: "{% $states.input.derivation_only = true %}"
+      # Always defined so MarkOpen can reference it on the happy path too.
+      # A Catch overwrites this with the actual error name.
+      failureReason: "{% null %}"
     Next: CheckDirect
 
   # State 1+2 (deterministic, no LLM) - block-list guard + exact/synonym
@@ -59,14 +62,39 @@ States:
     Assign:
       direct: "{% $states.result.Payload %}"
     Retry:
+      # Transient Lambda-side faults.
       - ErrorEquals:
           - Lambda.TooManyRequestsException
           - Lambda.ServiceException
         IntervalSeconds: 2
         MaxAttempts: 3
         BackoffRate: 2.0
+      # Aurora Serverless v2 cold-start faults. These are the errors a burst
+      # against a scaled-down cluster actually produces, and NONE of them
+      # matched the list above - so the Catch below silently sent correctly
+      # codeable terms to MarkOpen while the execution still reported
+      # SUCCEEDED. Measured on a live 12-execution burst: 7x
+      # Sandbox.Timedout (30s Lambda ceiling hit while Aurora resumed, one
+      # call took 25.7s) and 1x ThrottlingException ("insufficient resources
+      # on the database"). Longer interval and more attempts than above,
+      # because a resume takes tens of seconds, not milliseconds.
+      - ErrorEquals:
+          - Lambda.Unknown          # wraps Sandbox.Timedout at the SFN boundary
+          - States.Timeout
+          - ThrottlingException     # RDS Data API, cluster out of capacity
+          - DatabaseResumingException
+          - DatabaseUnavailableException
+        IntervalSeconds: 5
+        MaxAttempts: 6
+        BackoffRate: 2.0
     Catch:
+      # Assign the error into a workflow variable so MarkOpen can record WHY
+      # the row is open. Without this, "deliberately not coded" (block-list,
+      # low confidence) and "infrastructure broke" are indistinguishable in
+      # study_terms - they both just read `open`.
       - ErrorEquals: ["States.ALL"]
+        Assign:
+          failureReason: "{% $states.errorOutput.Error %}"
         Next: MarkOpen
     Next: RouteDirect
 
@@ -256,8 +284,23 @@ States:
         IntervalSeconds: 3
         MaxAttempts: 3
         BackoffRate: 2.0
+      # A tool call inside the agent loop can fail for the same cold-cluster
+      # reasons as the Lambda states above; the failure surfaces here as a
+      # generic task error rather than a Lambda error code.
+      - ErrorEquals:
+          - States.Timeout
+          - States.TaskFailed
+        IntervalSeconds: 5
+        MaxAttempts: 3
+        BackoffRate: 2.0
     Catch:
+      # Assign the error into a workflow variable so MarkOpen can record WHY
+      # the row is open. Without this, "deliberately not coded" (block-list,
+      # low confidence) and "infrastructure broke" are indistinguishable in
+      # study_terms - they both just read `open`.
       - ErrorEquals: ["States.ALL"]
+        Assign:
+          failureReason: "{% $states.errorOutput.Error %}"
         Next: MarkOpen
     Next: ScoreThreshold
 
@@ -296,14 +339,39 @@ States:
         encoding_dictionary_version: "{% $dictionaryVersion %}"
     Output: "{% $states.result.Payload %}"
     Retry:
+      # Transient Lambda-side faults.
       - ErrorEquals:
           - Lambda.TooManyRequestsException
           - Lambda.ServiceException
         IntervalSeconds: 2
         MaxAttempts: 3
         BackoffRate: 2.0
+      # Aurora Serverless v2 cold-start faults. These are the errors a burst
+      # against a scaled-down cluster actually produces, and NONE of them
+      # matched the list above - so the Catch below silently sent correctly
+      # codeable terms to MarkOpen while the execution still reported
+      # SUCCEEDED. Measured on a live 12-execution burst: 7x
+      # Sandbox.Timedout (30s Lambda ceiling hit while Aurora resumed, one
+      # call took 25.7s) and 1x ThrottlingException ("insufficient resources
+      # on the database"). Longer interval and more attempts than above,
+      # because a resume takes tens of seconds, not milliseconds.
+      - ErrorEquals:
+          - Lambda.Unknown          # wraps Sandbox.Timedout at the SFN boundary
+          - States.Timeout
+          - ThrottlingException     # RDS Data API, cluster out of capacity
+          - DatabaseResumingException
+          - DatabaseUnavailableException
+        IntervalSeconds: 5
+        MaxAttempts: 6
+        BackoffRate: 2.0
     Catch:
+      # Assign the error into a workflow variable so MarkOpen can record WHY
+      # the row is open. Without this, "deliberately not coded" (block-list,
+      # low confidence) and "infrastructure broke" are indistinguishable in
+      # study_terms - they both just read `open`.
       - ErrorEquals: ["States.ALL"]
+        Assign:
+          failureReason: "{% $states.errorOutput.Error %}"
         Next: MarkOpen
     End: true
 
@@ -323,14 +391,39 @@ States:
         encoding_dictionary_version: "{% $dictionaryVersion %}"
     Output: "{% $states.result.Payload %}"
     Retry:
+      # Transient Lambda-side faults.
       - ErrorEquals:
           - Lambda.TooManyRequestsException
           - Lambda.ServiceException
         IntervalSeconds: 2
         MaxAttempts: 3
         BackoffRate: 2.0
+      # Aurora Serverless v2 cold-start faults. These are the errors a burst
+      # against a scaled-down cluster actually produces, and NONE of them
+      # matched the list above - so the Catch below silently sent correctly
+      # codeable terms to MarkOpen while the execution still reported
+      # SUCCEEDED. Measured on a live 12-execution burst: 7x
+      # Sandbox.Timedout (30s Lambda ceiling hit while Aurora resumed, one
+      # call took 25.7s) and 1x ThrottlingException ("insufficient resources
+      # on the database"). Longer interval and more attempts than above,
+      # because a resume takes tens of seconds, not milliseconds.
+      - ErrorEquals:
+          - Lambda.Unknown          # wraps Sandbox.Timedout at the SFN boundary
+          - States.Timeout
+          - ThrottlingException     # RDS Data API, cluster out of capacity
+          - DatabaseResumingException
+          - DatabaseUnavailableException
+        IntervalSeconds: 5
+        MaxAttempts: 6
+        BackoffRate: 2.0
     Catch:
+      # Assign the error into a workflow variable so MarkOpen can record WHY
+      # the row is open. Without this, "deliberately not coded" (block-list,
+      # low confidence) and "infrastructure broke" are indistinguishable in
+      # study_terms - they both just read `open`.
       - ErrorEquals: ["States.ALL"]
+        Assign:
+          failureReason: "{% $states.errorOutput.Error %}"
         Next: MarkOpen
     End: true
 
@@ -345,12 +438,35 @@ States:
       Payload:
         record_id: "{% $recordId %}"
         target_status: open
+        # Null on the deliberate paths (block-list hit, confidence below the
+        # review floor). Non-null only when a Catch routed here after an
+        # error, which is what makes the two cases tellable apart.
+        failure_reason: "{% $failureReason %}"
     Output: "{% $states.result.Payload %}"
     Retry:
+      # Transient Lambda-side faults.
       - ErrorEquals:
           - Lambda.TooManyRequestsException
           - Lambda.ServiceException
         IntervalSeconds: 2
         MaxAttempts: 3
+        BackoffRate: 2.0
+      # Aurora Serverless v2 cold-start faults. These are the errors a burst
+      # against a scaled-down cluster actually produces, and NONE of them
+      # matched the list above - so the Catch below silently sent correctly
+      # codeable terms to MarkOpen while the execution still reported
+      # SUCCEEDED. Measured on a live 12-execution burst: 7x
+      # Sandbox.Timedout (30s Lambda ceiling hit while Aurora resumed, one
+      # call took 25.7s) and 1x ThrottlingException ("insufficient resources
+      # on the database"). Longer interval and more attempts than above,
+      # because a resume takes tens of seconds, not milliseconds.
+      - ErrorEquals:
+          - Lambda.Unknown          # wraps Sandbox.Timedout at the SFN boundary
+          - States.Timeout
+          - ThrottlingException     # RDS Data API, cluster out of capacity
+          - DatabaseResumingException
+          - DatabaseUnavailableException
+        IntervalSeconds: 5
+        MaxAttempts: 6
         BackoffRate: 2.0
     End: true

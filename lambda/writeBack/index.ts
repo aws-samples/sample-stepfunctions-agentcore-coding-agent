@@ -46,6 +46,13 @@ interface WriteBackInput {
    */
   encoding_dictionary?: string | null;
   encoding_dictionary_version?: string | null;
+  /**
+   * Set only when a Catch routed the execution here after an error. Null on
+   * the deliberate open paths (block-list hit, confidence below the review
+   * floor). Recorded so an operator can tell "we chose not to code this" from
+   * "something broke" - both otherwise look identical in study_terms.
+   */
+  failure_reason?: string | null;
 }
 
 interface WriteBackResult {
@@ -53,6 +60,8 @@ interface WriteBackResult {
   status: string;
   dict_term_code?: string | null;
   score?: number | null;
+  /** Present only when the row was left open because something failed. */
+  failure_reason?: string | null;
 }
 
 export const handler = async (event: WriteBackInput): Promise<WriteBackResult> => {
@@ -63,15 +72,21 @@ export const handler = async (event: WriteBackInput): Promise<WriteBackResult> =
   }
 
   if (target === 'open') {
-    await markOpen(recordId);
-    return { record_id: recordId, status: 'open' };
+    await markOpen(recordId, event.failure_reason ?? null);
+    return {
+      record_id: recordId,
+      status: 'open',
+      ...(event.failure_reason ? { failure_reason: event.failure_reason } : {}),
+    };
   }
 
   const cand = event.candidate ?? null;
   if (cand === null || Object.keys(cand).length === 0) {
-    // defensive: nothing to write -> fall back to open
-    await markOpen(recordId);
-    return { record_id: recordId, status: 'open' };
+    // Defensive: asked to code, but handed no candidate. That is a caller
+    // bug, not a coding decision, so record it as such rather than letting it
+    // masquerade as "deliberately left open".
+    await markOpen(recordId, 'MissingCandidate');
+    return { record_id: recordId, status: 'open', failure_reason: 'MissingCandidate' };
   }
 
   if (typeof cand.dict_term_code !== 'string' || cand.dict_term_code.length === 0) {
@@ -193,7 +208,12 @@ const verifyCodeExists = async (
   }
 };
 
-const markOpen = async (recordId: string): Promise<void> => {
+const markOpen = async (recordId: string, failureReason: string | null): Promise<void> => {
+  // status_changed_by carries the failure cause when there was one, so the
+  // distinction survives in the row itself and not only in the execution
+  // history: 'autocoding-workflow' = decided not to code,
+  // 'autocoding-workflow:error:<Error>' = never got to decide.
+  const changedBy = failureReason ? `${MACHINE}:error:${failureReason}` : MACHINE;
   await executeStatement(
     `UPDATE study_terms
      SET status = 'open', status_changed_by = :by,
@@ -201,7 +221,7 @@ const markOpen = async (recordId: string): Promise<void> => {
      WHERE record_id = :record_id`,
     [
       { name: 'record_id', value: { stringValue: recordId } },
-      { name: 'by', value: { stringValue: MACHINE } },
+      { name: 'by', value: { stringValue: changedBy } },
     ]
   );
 };

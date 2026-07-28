@@ -7,12 +7,14 @@ Functions) with bounded agentic reasoning (Amazon Bedrock AgentCore Harness).
 **This is not a certified or production-ready medical coding solution.**
 Specifically:
 
-- Dictionary coverage (MedDRA terms in `data/dictionary_terms_meddra.csv`, WHODrug
-  terms in `data/dictionary_terms_whodrug.csv`) is a de minimis illustrative set —
-  a handful of terms chosen to exercise every branch of the workflow, not a
-  redistributable extract of either licensed dictionary. Production coding
-  requires the full, currently licensed MedDRA and/or WHODrug dictionary for the
-  version in use.
+- Dictionary coverage (32 MedDRA terms in `data/dictionary_terms_meddra.csv`,
+  12 WHODrug terms in `data/dictionary_terms_whodrug.csv`) is a de minimis
+  illustrative set — terms chosen to exercise every branch of the workflow,
+  not a redistributable extract of either licensed dictionary. Production
+  coding requires the full, currently licensed MedDRA and/or WHODrug
+  dictionary for the version in use. **Note these are real codes in real
+  format, and the licensing posture for republishing them has not yet been
+  confirmed — see the unresolved section in [SOURCES.md](SOURCES.md).**
 - The synonym list (`data/synonym_list.csv`) and block-list
   (`data/terms_not_to_autocode.csv`) are illustrative fixtures authored for this
   repository, not a curated clinical coding standard. A real deployment's

@@ -54,7 +54,18 @@ export class CodingDatabase extends Construct {
         version: rds.AuroraPostgresEngineVersion.VER_16_8,
       }),
       writer: rds.ClusterInstance.serverlessV2('Writer'),
-      serverlessV2MinCapacity: 0,
+      // min 0.5 ACU, not 0. Scaling to zero is cheaper at idle but makes the
+      // first request after a pause pay a multi-second resume: a live burst of
+      // 12 concurrent executions against a freshly created 0-ACU cluster
+      // produced 7 Lambda timeouts and 1 `ThrottlingException: insufficient
+      // resources on the database`. 0.5 keeps the sample responsive and
+      // reproducible on a first run, which matters more here than the idle
+      // saving. Set this back to 0 if you would rather optimise for cost and
+      // accept a slow, occasionally failing first invocation.
+      serverlessV2MinCapacity: 0.5,
+      // 2 ACU is enough for this fixture but is the other half of the burst
+      // failure above - concurrent HNSW queries contend for it. Raise this
+      // before running the workflow at any real volume.
       serverlessV2MaxCapacity: 2,
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
