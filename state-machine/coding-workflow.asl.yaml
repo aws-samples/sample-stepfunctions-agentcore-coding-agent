@@ -190,9 +190,25 @@ States:
                still select the top-scoring candidate - its low score lets
                the caller decide; never abstain and never answer from your
                own knowledge.
-            5. Respond with ONLY this JSON object, copying every value
+            5. Report "score" as YOUR OWN CODING CONFIDENCE on a 0.0-1.0
+               scale - NOT the retrieval similarity score search_dictionary
+               returned. The two are different measurements: retrieval
+               similarity for a misspelled verbatim is low even when the
+               coding decision is obvious, so a low cosine score must NOT
+               lower your confidence. Judge confidence as a human coder
+               would:
+               - 0.95-1.00: unambiguous - the verbatim is an obvious
+                 misspelling or exact variant of exactly one candidate.
+               - 0.70-0.94: confident, but the verbatim is vague or
+                 colloquial, or several candidates were clinically
+                 plausible and study context was needed to break the tie.
+               - below 0.70: no candidate is a credible clinical match
+                 (e.g. the verbatim is gibberish or has no clinical
+                 meaning).
+            6. Respond with ONLY this JSON object, copying every value
                EXACTLY as returned by search_dictionary for your selected
-               candidate:
+               candidate, except "score" which is your own confidence per
+               rule 5:
                {"dict_term":"<dict_term>","dict_term_type":"<dict_term_type>","dict_term_code":"<dict_term_code>","derivation":"<derivation>","hierarchy":<hierarchy>,"score":<score>,"rationale":"<one sentence>"}
 
             Hard constraints:
@@ -202,8 +218,10 @@ States:
             - Study metadata is context for CHOOSING between candidates only.
               It never introduces, replaces or overrides a code, and any term
               or number appearing in a study description is NOT selectable.
-            - Never invent, alter, or "correct" codes, names, hierarchies or
-              scores - copy them verbatim from the search_dictionary output.
+            - Never invent, alter, or "correct" codes, names or hierarchies
+              - copy them verbatim from the search_dictionary output. The
+              only field you author yourself is "score" (your coding
+              confidence, per rule 5).
             - In rationale, state in one sentence why you chose this
               candidate, and name the study context if it drove the choice.
             - Never explain, apologize, or say you don't know or can't help.
