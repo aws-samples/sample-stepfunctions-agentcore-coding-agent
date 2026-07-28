@@ -59,6 +59,68 @@ export class CodingHarness extends Construct {
           actions: ['bedrock-agentcore:InvokeGateway'],
           resources: [props.gatewayArn],
         }),
+        // ---- Observability ----------------------------------------------
+        // AgentCore assumes THIS role to emit its own telemetry, so without
+        // these the harness silently writes nothing: no log group is ever
+        // created and the agent's reasoning, tool calls and token usage are
+        // invisible. Verified on a live deploy - with only the two Bedrock
+        // statements above, no /aws/bedrock-agentcore/runtimes/* log group
+        // appeared for this harness after a dozen invocations, and tool usage
+        // had to be reconstructed by correlating the tool Lambdas' own
+        // CloudWatch REPORT lines against each CodingAgent task window.
+        //
+        // Since July 2026 AgentCore delivers unified observability - traces,
+        // prompts, structured logs and stdout all land in one per-agent log
+        // group, /aws/bedrock-agentcore/runtimes/<agent_id>-<endpoint>, rather
+        // than splitting spans into the shared aws/spans group. Nothing needs
+        // to be enabled on the CfnHarness resource itself (it exposes no
+        // observability property); it is entirely IAM-gated, which is why
+        // these statements ARE the feature switch.
+        //
+        // Mirrors the execution role in the official AgentCore harness +
+        // Step Functions sample (01-features/01-harness/01-advanced-examples/
+        // 06-async-step-function/cloudformation.yaml).
+        new iam.PolicyStatement({
+          sid: 'XRayTracingAccess',
+          actions: [
+            'xray:PutTraceSegments',
+            'xray:PutTelemetryRecords',
+            'xray:GetSamplingRules',
+            'xray:GetSamplingTargets',
+          ],
+          resources: ['*'],
+        }),
+        new iam.PolicyStatement({
+          sid: 'CloudWatchLogsGroup',
+          actions: ['logs:CreateLogGroup', 'logs:DescribeLogStreams'],
+          resources: [
+            `arn:aws:logs:${Stack.of(this).region}:${Stack.of(this).account}:log-group:/aws/bedrock-agentcore/runtimes/*`,
+          ],
+        }),
+        new iam.PolicyStatement({
+          sid: 'CloudWatchLogsDescribeGroups',
+          // DescribeLogGroups cannot be scoped to a single group - the API
+          // lists across the account, so a narrower resource denies the call.
+          actions: ['logs:DescribeLogGroups'],
+          resources: [
+            `arn:aws:logs:${Stack.of(this).region}:${Stack.of(this).account}:log-group:*`,
+          ],
+        }),
+        new iam.PolicyStatement({
+          sid: 'CloudWatchLogsStream',
+          actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+          resources: [
+            `arn:aws:logs:${Stack.of(this).region}:${Stack.of(this).account}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*`,
+          ],
+        }),
+        new iam.PolicyStatement({
+          sid: 'CloudWatchMetricsPublish',
+          actions: ['cloudwatch:PutMetricData'],
+          resources: ['*'],
+          conditions: {
+            StringEquals: { 'cloudwatch:namespace': 'bedrock-agentcore' },
+          },
+        }),
       ],
     });
     executionRolePolicy.attachToRole(executionRole);

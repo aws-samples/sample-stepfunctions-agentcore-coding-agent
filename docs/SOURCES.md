@@ -49,6 +49,54 @@ license specifics have not been independently confirmed. Update the entries
 above with exact license references and retrieval dates before treating this
 file as a compliance record._
 
+---
+
+## UNRESOLVED: dictionary licensing must be confirmed before publication
+
+**Status: open. Requires a human decision — this cannot be settled from the
+code.**
+
+What the repository actually contains, verified 2026-07-28:
+
+| | Count | Code format |
+|---|---|---|
+| MedDRA terms (`data/dictionary_terms_meddra.csv`) | **32** | real 8-digit codes, e.g. `10027599` (Migraine) |
+| WHODrug terms (`data/dictionary_terms_whodrug.csv`) | **12** | real 11-digit codes, e.g. `00201501382` (NEXIUM) |
+
+Two facts that make this a genuine question rather than a theoretical one:
+
+1. **These are real codes, not placeholders.** An earlier revision of the
+   fixtures used deliberately synthetic identifiers (`SAMPLE-LLT-0001`) as a
+   fabrication canary. Those are now **entirely gone** — a search for
+   `SAMPLE-`/`FAKE-`/`TEST-` across `data/` returns zero matches. Every code
+   is in real dictionary format and, as far as can be told without a license,
+   corresponds to a genuine term.
+2. **MedDRA and WHODrug are both proprietary and licensed** (MSSO/IFPMA and
+   Uppsala Monitoring Centre respectively), and this repository is public
+   under `aws-samples`.
+
+"De minimis illustrative use" is the position the docs currently assert. That
+may well be defensible — 44 terms out of tens of thousands, chosen to show
+data shape rather than to substitute for a license — but **nobody with
+authority to make that call has confirmed it**, and this file should not be
+read as evidence that they have.
+
+Options, in increasing order of safety:
+
+- **A — Confirm and cite.** Obtain written confirmation from whoever holds
+  the org's MedDRA/WHODrug license that this quantity and use qualifies, and
+  record the reference here. Keeps the fixtures as-is.
+- **B — Reduce further.** Cut the dictionary to the minimum that still
+  exercises every branch (roughly 12–15 terms), lowering exposure.
+- **C — Return to synthetic codes** (recommended if A can't be obtained
+  quickly). Restore fabricated identifiers with real *structure* but invented
+  values. Costs nothing architecturally — the workflow never validates codes
+  against an external source — and removes the question entirely. The
+  trade-off is that readers can no longer sanity-check a code against a real
+  dictionary.
+
+Until one of these is chosen and recorded here, treat publication as blocked.
+
 ## General Disclaimer
 
 This project is not affiliated with, endorsed by, or officially connected to

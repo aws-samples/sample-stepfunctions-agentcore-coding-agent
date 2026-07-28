@@ -38,7 +38,15 @@ export class CodingLambdas extends Construct {
 
     const commonProps: Partial<nodejs.NodejsFunctionProps> = {
       runtime: lambda.Runtime.NODEJS_22_X,
-      timeout: Duration.seconds(30),
+      // 90s, not the 30s default. These functions call the RDS Data API
+      // against a Serverless v2 cluster that can be scaled to 0 ACU, and a
+      // cold resume plus an HNSW vector query is slow: a live burst of 12
+      // concurrent executions produced a measured 25.7s dictionary-search
+      // call, and 7 of 12 executions died on `Sandbox.Timedout` at the 30s
+      // ceiling. Because that error is not retried (see the state machine's
+      // Retry blocks) the Catch silently marked those rows `open` while every
+      // execution still reported SUCCEEDED - the worst kind of failure.
+      timeout: Duration.seconds(90),
       bundling: { minify: true, sourceMap: true },
     };
 

@@ -54,21 +54,43 @@ export class CodingDatabase extends Construct {
         version: rds.AuroraPostgresEngineVersion.VER_16_8,
       }),
       writer: rds.ClusterInstance.serverlessV2('Writer'),
-      serverlessV2MinCapacity: 0,
+      // min 0.5 ACU, not 0. Scaling to zero is cheaper at idle but makes the
+      // first request after a pause pay a multi-second resume: a live burst of
+      // 12 concurrent executions against a freshly created 0-ACU cluster
+      // produced 7 Lambda timeouts and 1 `ThrottlingException: insufficient
+      // resources on the database`. 0.5 keeps the sample responsive and
+      // reproducible on a first run, which matters more here than the idle
+      // saving. Set this back to 0 if you would rather optimise for cost and
+      // accept a slow, occasionally failing first invocation.
+      serverlessV2MinCapacity: 0.5,
+      // 2 ACU is enough for this fixture but is the other half of the burst
+      // failure above - concurrent HNSW queries contend for it. Raise this
+      // before running the workflow at any real volume.
       serverlessV2MaxCapacity: 2,
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       defaultDatabaseName: CodingDatabase.DATABASE_NAME,
       enableDataApi: true,
       credentials: rds.Credentials.fromGeneratedSecret('coding_admin'),
-      // Encryption at rest with the AWS-managed key for RDS. Aurora clusters
-      // default to encrypted, but declaring it explicitly is deliberate: this
-      // sample sits in a clinical-data context, `cdk synth` otherwise emits
-      // CloudFormation-Validate W9008 ("RDS instance should have
-      // StorageEncrypted set to true"), and a reader copying this construct
-      // into a real deployment should see the control rather than inherit it
-      // silently. Swap in a customer-managed KMS key here if your key policy
-      // requires one.
+      // Encryption at rest with the AWS-managed key for RDS.
+      //
+      // This is NOT redundant: before it was set, the deployed cluster was
+      // verified to be `StorageEncrypted: false`. Aurora Serverless v2 did not
+      // default encryption on here, so the sample was shipping an unencrypted
+      // database in a clinical-data context. Verified after the fix:
+      // StorageEncrypted true with a KMS key ARN.
+      //
+      // Note this does NOT silence CloudFormation-Validate W9008 ("RDS
+      // instance should have StorageEncrypted set to true"). That warning
+      // targets the AWS::RDS::DBInstance writer, where StorageEncrypted is
+      // unset - which is correct for Aurora, because encryption is a
+      // cluster-level property. The warning is a false positive for the
+      // instance and will persist; see docs/KNOWN-ISSUES.md.
+      //
+      // Swap in a customer-managed KMS key here if your key policy requires
+      // one. Changing this setting on an existing deployment REPLACES the
+      // cluster - safe for this sample since all data is reseedable via
+      // `npm run seed`.
       storageEncrypted: true,
       removalPolicy: RemovalPolicy.DESTROY,
     });
