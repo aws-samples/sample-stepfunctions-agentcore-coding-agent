@@ -1,5 +1,5 @@
 {
-  "name": "sample-medical-billing-agentcore",
+  "name": "sample-stepfunctions-agentcore-coding-agent",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -16,30 +16,42 @@
     "seed": "tsx scripts/seed.ts"
   },
   "devDependencies": {
-    "@types/aws-lambda": "latest",
-    "@types/jest": "latest",
-    "@types/node": "latest",
-    "aws-cdk": "latest",
-    "esbuild": "latest",
-    "jest": "latest",
-    "ts-jest": "latest",
-    "tsx": "latest",
-    "typescript": "latest"
+    "@types/aws-lambda": "^8.10.162",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.1.1",
+    "aws-cdk": "^2.1131.0",
+    "esbuild": "^0.28.1",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11",
+    "tsx": "^4.23.1",
+    "typescript": "~6.0.3"
   },
   "dependencies": {
-    "@aws-lambda-powertools/signer": "latest",
-    "@aws-sdk/client-bedrock-agent": "latest",
     "@aws-sdk/client-bedrock-runtime": "^3.1092.0",
-    "@aws-sdk/client-cloudformation": "latest",
-    "@aws-sdk/client-dynamodb": "^3.1087.0",
+    "@aws-sdk/client-cloudformation": "^3.1088.0",
     "@aws-sdk/client-rds-data": "^3.1092.0",
-    "@aws-sdk/client-s3": "^3.1087.0",
-    "@aws-sdk/client-sts": "latest",
-    "@aws-sdk/lib-dynamodb": "^3.1087.0",
-    "aws-cdk-lib": "latest",
-    "constructs": "latest",
+    "aws-cdk-lib": "^2.261.0",
+    "constructs": "^10.7.0",
     "csv-parse": "^5.6.0",
-    "source-map-support": "latest",
-    "yaml": "latest"
+    "source-map-support": "^0.5.21",
+    "yaml": "^2.9.0"
+  },
+  "//overrides": [
+    "brace-expansion <=5.0.7 carries two DoS advisories (GHSA-3jxr-9vmj-r5cp,",
+    "GHSA-mh99-v99m-4gvg) and was pulled in transitively by both aws-cdk-lib and",
+    "the jest toolchain, producing 20 high-severity findings on npm install.",
+    "Neither path is reachable at runtime - nothing here expands untrusted brace",
+    "patterns, and it is not bundled into any Lambda - but a public sample should",
+    "not greet readers with that. `npm audit fix` proposes DOWNGRADING jest to",
+    "25.x, which is worse than the advisory; pinning the patched 5.0.8 fixes 19",
+    "of 20 without touching the toolchain.",
+    "",
+    "The remaining finding is aws-cdk-lib's own VENDORED copy at",
+    "node_modules/aws-cdk-lib/node_modules/brace-expansion (aws-cdk-lib sets",
+    "bundleDependencies, so npm overrides cannot reach inside it). It is",
+    "build-time only and must be fixed upstream by AWS - see docs/SOURCES.md."
+  ],
+  "overrides": {
+    "brace-expansion": "^5.0.8"
   }
 }

@@ -61,6 +61,15 @@ export class CodingDatabase extends Construct {
       defaultDatabaseName: CodingDatabase.DATABASE_NAME,
       enableDataApi: true,
       credentials: rds.Credentials.fromGeneratedSecret('coding_admin'),
+      // Encryption at rest with the AWS-managed key for RDS. Aurora clusters
+      // default to encrypted, but declaring it explicitly is deliberate: this
+      // sample sits in a clinical-data context, `cdk synth` otherwise emits
+      // CloudFormation-Validate W9008 ("RDS instance should have
+      // StorageEncrypted set to true"), and a reader copying this construct
+      // into a real deployment should see the control rather than inherit it
+      // silently. Swap in a customer-managed KMS key here if your key policy
+      // requires one.
+      storageEncrypted: true,
       removalPolicy: RemovalPolicy.DESTROY,
     });
   }

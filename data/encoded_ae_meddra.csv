@@ -1,0 +1,8 @@
+AETERM,CodingStatus,DictionaryRelease,LLT,PT,PTCD,HLT,HLGT,SOC,PrimaryPath,LastCodedBy,MatchScore
+Dislocated shoulder,Autocoded,MedDRA v27.0,Dislocated shoulder,Joint dislocation,10023204,Fractures and dislocations NEC,Bone and joint injuries,"Injury, poisoning and procedural complications",Y,autocoding-workflow,1.00
+Hypothyroid,Autocoded,MedDRA v27.0,Hypothyroidism,Hypothyroidism,10021114,Thyroid hypofunction disorders,Thyroid gland disorders,Endocrine disorders,Y,autocoding-workflow,1.00
+migrane,Autocoded,MedDRA v27.0,Migraine,Migraine,10027599,Migraine headaches,Headaches,Nervous system disorders,Y,autocoding-workflow,0.99
+flutters in my chest sometimes,Pending Approval,MedDRA v27.0,Cardiac flutter,Cardiac flutter,10052840,Rate and rhythm disorders NEC,Cardiac arrhythmias,Cardiac disorders,Y,autocoding-workflow,0.88
+cramps,Pending Approval,MedDRA v27.0,Muscle spasms,Muscle spasms,10028334,Muscle related signs and symptoms,Musculoskeletal and connective tissue disorders NEC,Musculoskeletal and connective tissue disorders,Y,autocoding-workflow,0.82
+HAEMORRHAGE,Open,MedDRA v27.0,,,,,,,,,
+asdfghjkl,Open,MedDRA v27.0,,,,,,,,,

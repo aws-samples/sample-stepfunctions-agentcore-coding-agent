@@ -1,31 +1,38 @@
-case_id,case_name,stage,table,verbatim,dict_term,dict_term_type,dict_term_code,derivation,status,match_score,notes
-A,exact_match_autocoded,input,study_terms,Dislocated shoulder,,,,,open,,AE verbatim ingested from EDC awaiting coding
-A,exact_match_autocoded,tna_guard,terms_not_to_autocode,Dislocated shoulder,,,,,,,no block-list hit -> continue
-A,exact_match_autocoded,exact_match,dictionary_terms,Dislocated shoulder,Dislocated shoulder,LLT,10013156,Dislocated shoulder,,1.00,unique LLT exact match; carries promotion to PT Joint dislocation (10023204)
-A,exact_match_autocoded,output,study_terms,Dislocated shoulder,Dislocated shoulder,LLT,10013156,Dislocated shoulder,autocoded,1.00,"status_changed_by=autocoding-workflow (machine coded, no human)"
-B,synonym_match_autocoded,input,study_terms,Hypothyroid,,,,,open,,'Hypothyroid' is not a valid MedDRA term on its own
-B,synonym_match_autocoded,tna_guard,terms_not_to_autocode,Hypothyroid,,,,,,,no block-list hit -> continue
-B,synonym_match_autocoded,synonym,synonym_list,Hypothyroid,Hypothyroidism,PT,10021114,Hypothyroidism,active,1.00,curated synonym pins verbatim to real PT code 10021114
-B,synonym_match_autocoded,output,study_terms,Hypothyroid,Hypothyroidism,PT,10021114,Hypothyroidism,autocoded,1.00,synonym-driven exact match; machine coded
-C,tna_block_open,input,study_terms,HAEMORRHAGE,,,,,open,,verbatim ingested awaiting coding
-C,tna_block_open,tna_guard,terms_not_to_autocode,HAEMORRHAGE,,,,,active,,BLOCK-list hit -> autocoder returns nothing
-C,tna_block_open,output,study_terms,HAEMORRHAGE,,,,,open,,"stays open for a human coder (safety block, not 'no match')"
-D,agent_semantic_autocoded,input,study_terms,migrane,,,,,open,,typo of 'migraine'; no exact/synonym hit
-D,agent_semantic_autocoded,tna_guard,terms_not_to_autocode,migrane,,,,,,,no block-list hit -> continue
-D,agent_semantic_autocoded,agent_search,dictionary_terms,migrane,Migraine,PT,10027599,Migraine,,0.94,AgentCore semantic search over pgvector; score >= autocode threshold (0.90)
-D,agent_semantic_autocoded,output,study_terms,migrane,Migraine,PT,10027599,Migraine,autocoded,0.94,machine coded via agent path
-E,agent_semantic_review,input,study_terms,flutters in my chest sometimes,,,,,open,,verbose lay description; no exact/synonym hit
-E,agent_semantic_review,agent_search,dictionary_terms,flutters in my chest sometimes,Cardiac flutter,PT,10052840,Cardiac flutter,,0.78,score between review (0.70) and autocode (0.90) thresholds
-E,agent_semantic_review,output,study_terms,flutters in my chest sometimes,Cardiac flutter,PT,10052840,Cardiac flutter,approval_required,0.78,routed to a human coder for one-click confirm/override
-F,no_confident_match_open,input,study_terms,asdfghjkl,,,,,open,,garbage verbatim
-F,no_confident_match_open,agent_search,dictionary_terms,asdfghjkl,,,,,,0.05,top candidate below review threshold (0.70)
-F,no_confident_match_open,output,study_terms,asdfghjkl,,,,,open,,left open for manual coding (score not persisted on the open path)
-G,whodrug_exact_autocoded,input,study_terms,ibuprofen,,,,,open,,"con-med verbatim, WHODrug"
-G,whodrug_exact_autocoded,exact_match,dictionary_terms,ibuprofen,IBUPROFEN,generic name,00109201001,IBUPROFEN,,1.00,unique generic-name exact match; ATC M01AE PROPIONIC ACID DERIVATIVES
-G,whodrug_exact_autocoded,output,study_terms,ibuprofen,IBUPROFEN,generic name,00109201001,IBUPROFEN,autocoded,1.00,machine coded
-H,derivation_only,input,study_terms,FULVESTRANT,,,,,open,,derivation_only=True (from_source=EDC + dict=WHODrug)
-H,derivation_only,exact_match,dictionary_terms,FULVESTRANT,FULVESTRANT,generic name,01503001001,FULVESTRANT,,1.00,exact 1:1 match required; ATC L02BA ANTI-ESTROGENS
-H,derivation_only,output,study_terms,FULVESTRANT,,,,FULVESTRANT,autocoded,1.00,"updates ONLY derivation + ATC hierarchy, never a new dict_term"
-I,human_review_approved,input,study_terms,nexiuum,,,,,open,,misspelling; WHODrug con-med
-I,human_review_approved,agent_search,dictionary_terms,nexiuum,NEXIM,trade name,00101801382,TRANEXAMIC ACID,,0.71,agent proposes NEXIM at review-tier confidence (0.70-0.90) -> approval_required
-I,human_review_approved,output,study_terms,nexiuum,NEXIM,trade name,00101801382,TRANEXAMIC ACID,approved,0.71,status_changed_by=medical-coder-01 (human) confirms the proposed code; final derivation TRANEXAMIC ACID is NEXIM's generic ingredient
+case_id,case_name,stage,table,study,verbatim,dict_term,dict_term_type,dict_term_code,derivation,status,match_score,notes
+A,exact_match_autocoded,input,study_terms,ONCO-2024-01,Dislocated shoulder,,,,,open,,AE verbatim ingested from EDC awaiting coding
+A,exact_match_autocoded,tna_guard,terms_not_to_autocode,ONCO-2024-01,Dislocated shoulder,,,,,,,no block-list hit -> continue
+A,exact_match_autocoded,exact_match,dictionary_terms,ONCO-2024-01,Dislocated shoulder,Dislocated shoulder,LLT,10013156,Dislocated shoulder,,1.00,unique LLT exact match; carries promotion to PT Joint dislocation (10023204)
+A,exact_match_autocoded,output,study_terms,ONCO-2024-01,Dislocated shoulder,Dislocated shoulder,LLT,10013156,Dislocated shoulder,autocoded,1.00,"status_changed_by=autocoding-workflow (machine coded, no human, no LLM)"
+B,synonym_match_autocoded,input,study_terms,ONCO-2024-01,Hypothyroid,,,,,open,,'Hypothyroid' is not a valid MedDRA term on its own
+B,synonym_match_autocoded,synonym,synonym_list,ONCO-2024-01,Hypothyroid,Hypothyroidism,PT,10021114,Hypothyroidism,active,1.00,curated synonym pins verbatim to real PT code 10021114
+B,synonym_match_autocoded,output,study_terms,ONCO-2024-01,Hypothyroid,Hypothyroidism,PT,10021114,Hypothyroidism,autocoded,1.00,synonym-driven exact match; machine coded
+C,tna_block_open,input,study_terms,ONCO-2024-01,HAEMORRHAGE,,,,,open,,verbatim ingested awaiting coding
+C,tna_block_open,tna_guard,terms_not_to_autocode,ONCO-2024-01,HAEMORRHAGE,,,,,active,,"BLOCK-list hit -> autocoder returns nothing, checked BEFORE any match"
+C,tna_block_open,output,study_terms,ONCO-2024-01,HAEMORRHAGE,,,,,open,,"stays open for a human coder (safety block, not 'no match')"
+D,agent_semantic_autocoded,input,study_terms,ONCO-2024-01,migrane,,,,,open,,typo of 'migraine'; no exact/synonym hit
+D,agent_semantic_autocoded,agent_search,dictionary_terms,ONCO-2024-01,migrane,Migraine,PT,10027599,Migraine,,0.99,"retrieval cosine is only ~0.37 (a misspelling is lexically distant) but the coding decision is unambiguous, so the agent's CONFIDENCE is high -> autocode"
+D,agent_semantic_autocoded,output,study_terms,ONCO-2024-01,migrane,Migraine,PT,10027599,Migraine,autocoded,0.99,machine coded via agent path
+E,agent_semantic_review,input,study_terms,ONCO-2024-01,flutters in my chest sometimes,,,,,open,,verbose lay description; no exact/synonym hit
+E,agent_semantic_review,agent_search,dictionary_terms,ONCO-2024-01,flutters in my chest sometimes,Cardiac flutter,PT,10052840,Cardiac flutter,,0.88,"competing rhythm candidates (Palpitations, Tachycardia); study lists cardiac rhythm disturbances as an AESI -> confident but not certain"
+E,agent_semantic_review,output,study_terms,ONCO-2024-01,flutters in my chest sometimes,Cardiac flutter,PT,10052840,Cardiac flutter,approval_required,0.88,routed to a human coder for one-click confirm/override
+F,no_confident_match_open,input,study_terms,ONCO-2024-01,asdfghjkl,,,,,open,,garbage verbatim
+F,no_confident_match_open,agent_search,dictionary_terms,ONCO-2024-01,asdfghjkl,,,,,,<0.70,no candidate is a credible clinical match -> confidence below review threshold
+F,no_confident_match_open,output,study_terms,ONCO-2024-01,asdfghjkl,,,,,open,,left open for manual coding (score not persisted on the open path)
+G,whodrug_exact_autocoded,input,study_terms,ONCO-2024-01,ibuprofen,,,,,open,,"con-med verbatim, WHODrug"
+G,whodrug_exact_autocoded,exact_match,dictionary_terms,ONCO-2024-01,ibuprofen,IBUPROFEN,generic name,00109201001,IBUPROFEN,,1.00,unique generic-name exact match; ATC M01AE PROPIONIC ACID DERIVATIVES
+G,whodrug_exact_autocoded,output,study_terms,ONCO-2024-01,ibuprofen,IBUPROFEN,generic name,00109201001,IBUPROFEN,autocoded,1.00,machine coded
+H,derivation_only,input,study_terms,ONCO-2024-01,FULVESTRANT,,,,,open,,derivation_only=True (from_source=EDC + dict=WHODrug)
+H,derivation_only,exact_match,dictionary_terms,ONCO-2024-01,FULVESTRANT,FULVESTRANT,generic name,01503001001,FULVESTRANT,,1.00,exact 1:1 match required; ATC L02BA ANTI-ESTROGENS
+H,derivation_only,output,study_terms,ONCO-2024-01,FULVESTRANT,,,,FULVESTRANT,autocoded,1.00,"updates ONLY derivation + ATC hierarchy, never a new dict_term"
+I,agent_near_miss_trade_name,input,study_terms,GI-2025-03,nexiuum,,,,,open,,misspelling of a trade name; WHODrug con-med
+I,agent_near_miss_trade_name,agent_search,dictionary_terms,GI-2025-03,nexiuum,NEXIUM,trade name,00201501382,ESOMEPRAZOLE,,0.98,"search returns BOTH 'NEXIM' (tranexamic acid, an antifibrinolytic) and 'NEXIUM' (esomeprazole, a PPI) - lexically near-identical to the verbatim. get_study_info reports a reflux study whose expected con-meds are PPIs and which explicitly does not expect antifibrinolytics, so the choice is unambiguous once context is applied -> high confidence"
+I,agent_near_miss_trade_name,output,study_terms,GI-2025-03,nexiuum,NEXIUM,trade name,00201501382,ESOMEPRAZOLE,autocoded,0.98,"autocoded: the misspelling has exactly one clinically plausible reading in this study. Contrast with cases J/K/L, where several candidates remain plausible after context and the workflow routes to human review"
+J,study_context_musculoskeletal,input,study_terms,ONCO-2024-01,cramps,,,,,open,,ambiguous lay term: could be muscle cramps OR abdominal cramping
+J,study_context_musculoskeletal,agent_search,dictionary_terms,ONCO-2024-01,cramps,Muscle spasms,PT,10028334,Muscle spasms,,0.85-0.92,"search returns Muscle spasms, Myalgia AND Abdominal pain as plausible; get_study_info reports an endocrine-therapy breast cancer study actively monitoring muscle cramps/spasms, GI events not an endpoint -> Muscle spasms"
+J,study_context_musculoskeletal,output,study_terms,ONCO-2024-01,cramps,Muscle spasms,PT,10028334,Muscle spasms,autocoded|approval_required,0.85-0.92,"SAME verbatim as case K, DIFFERENT code - the study context is the only thing that separates them. ASSERT ON dict_term_code, NOT status: the term is stable across runs but the model-authored confidence straddles the 0.90 gate (observed 0.85/0.85/0.88/0.88/0.92 over five identical runs)"
+K,study_context_gastrointestinal,input,study_terms,GI-2025-03,cramps,,,,,open,,"identical verbatim to case J, different study"
+K,study_context_gastrointestinal,agent_search,dictionary_terms,GI-2025-03,cramps,Abdominal pain,PT,10000081,Abdominal pain,,0.80-0.92,same candidate set as case J; get_study_info reports a reflux study where abdominal cramping is an expected AESI and musculoskeletal events are not an endpoint -> Abdominal pain
+K,study_context_gastrointestinal,output,study_terms,GI-2025-03,cramps,Abdominal pain,PT,10000081,Abdominal pain,autocoded|approval_required,0.80-0.92,"THE demonstration case: identical input to J, different code, driven entirely by the study metadata the second tool supplies. Assert on dict_term_code - the status depends on where the run's confidence lands relative to the 0.90 gate"
+L,study_context_cardiac,input,study_terms,CARD-2025-02,heart races when I stand up,,,,,open,,lay rhythm description in an arrhythmia study
+L,study_context_cardiac,agent_search,dictionary_terms,CARD-2025-02,heart races when I stand up,Tachycardia,PT,10043071,Tachycardia,,0.85,"competing rhythm candidates (Palpitations, Cardiac flutter, Atrial fibrillation); 'races' maps to rate, and the study codes lay rhythm symptoms to the cardiac SOC -> Tachycardia"
+L,study_context_cardiac,output,study_terms,CARD-2025-02,heart races when I stand up,Tachycardia,PT,10043071,Tachycardia,approval_required,0.85,review-tier: lay language mapped to a specific rhythm term warrants human confirmation

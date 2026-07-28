@@ -19,7 +19,7 @@ redistributable dictionary extract. No customer or patient data is included.
 - The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) v2, configured with credentials for the target account (`aws configure` or an SSO profile).
 - The AWS CDK CLI — installed via `npm install` below (`aws-cdk` is a dev dependency), or globally with `npm install -g aws-cdk`.
 - Your target account/region [bootstrapped for CDK](https://docs.aws.amazon.com/cdk/v2/guide/bootstrapping.html) (`npx cdk bootstrap`), if this is the first CDK deploy there.
-- `jq` and `uuidgen` — used only by the shell snippets in the testing section below, not by the deploy or seed steps. (`uuidgen` ships with macOS/most Linux distros; `jq` via `brew install jq` / `apt install jq`.)
+- `jq` and `uuidgen` — used only by the shell snippets in the testing section below, not by the deploy or seed steps. `uuidgen` ships with macOS and most Linux distros; on a minimal Amazon Linux 2023 host neither is present, so install both with `sudo dnf install -y jq util-linux` (`jq` via `brew install jq` / `apt install jq` elsewhere).
 - Model access enabled in the Amazon Bedrock console for **Titan Text Embeddings V2** (`amazon.titan-embed-text-v2:0`, used by the seed script and the dictionary-search tool) and **Claude Sonnet** (the harness's `us.anthropic.claude-sonnet-4-6` inference profile — see `lib/constructs/coding-harness.ts`), in the region you deploy to.
 
 ## The design pattern
@@ -94,7 +94,10 @@ lambda/
 state-machine/
 └── coding-workflow.asl.yaml          # the state machine (JSONata)
 scripts/
-└── seed.ts                           # creates schema, loads data/*.csv, embeds
+└── seed.ts                            # creates schema, loads data/*.csv, embeds
+test/
+├── checkDirect.test.ts                # deterministic-path decision logic
+└── stateMachine.test.ts               # ASL wiring + agent-reply parsing contract
 data/
 ├── dictionary_terms_meddra.csv       # (1) MedDRA target vocabulary
 ├── dictionary_terms_whodrug.csv      # (1) WHODrug target vocabulary
@@ -102,7 +105,7 @@ data/
 ├── terms_not_to_autocode.csv         # (3) block-list
 ├── study_terms_input.csv             # (4) input verbatims to code
 ├── study_metadata.csv                # (5) study context for disambiguation
-├── golden_walkthrough.csv            # (6) 9 traced cases A-I (the tests below)
+├── golden_walkthrough.csv            # (6) 12 traced cases A-L (the tests below)
 └── generate_sample_data.py           # regenerates every CSV above
 ```
 
@@ -111,6 +114,7 @@ data/
 ```bash
 npm install
 npm run build
+npm test          # unit tests: no AWS calls, no deployed stack needed
 npx cdk deploy
 ```
 
@@ -125,7 +129,7 @@ MedicalCodingAgentCoreDemo.StateMachineArn = arn:aws:states:...:stateMachine:Med
 
 ## Seed the database
 
-Creates the four tables and loads `data/*.csv`, generating a Titan v2 embedding for
+Creates the five tables and loads `data/*.csv`, generating a Titan v2 embedding for
 every dictionary row along the way:
 
 ```bash
@@ -141,21 +145,85 @@ automatically).
 ## The golden walkthrough: testing each routing variation
 
 `data/golden_walkthrough.csv` traces one input verbatim through every branch the
-state machine can take. After seeding, `study_terms` has nine `open` rows — one per
+state machine can take. After seeding, `study_terms` has twelve `open` rows — one per
 case below. Each case starts a Step Functions execution and checks both the
 execution output and the persisted database row.
 
-| Case | Verbatim | Path exercised | Expected outcome |
+| Case | Study | Verbatim | Path exercised | Expected outcome |
+|---|---|---|---|---|
+| A | ONCO-2024-01 | `Dislocated shoulder` | exact dictionary match | `autocoded`, score 1.00 |
+| B | ONCO-2024-01 | `Hypothyroid` | synonym match | `autocoded`, score 1.00 |
+| C | ONCO-2024-01 | `HAEMORRHAGE` | block-list hit | `open` (safety block) |
+| D | ONCO-2024-01 | `migrane` | agent, high confidence | `autocoded` |
+| E | ONCO-2024-01 | `flutters in my chest sometimes` | agent, medium confidence | `approval_required` |
+| F | ONCO-2024-01 | `asdfghjkl` | agent, no confident match | `open` |
+| G | ONCO-2024-01 | `ibuprofen` | exact match (WHODrug) | `autocoded`, score 1.00 |
+| H | ONCO-2024-01 | `FULVESTRANT` | exact match, `derivation_only` | `autocoded`, only `derivation`/`hierarchy` written, no new `dict_term` |
+| I | GI-2025-03 | `nexiuum` | agent, near-miss trade names split by study context | `autocoded` → `NEXIUM` (esomeprazole), *not* `NEXIM` (tranexamic acid) |
+| **J** | ONCO-2024-01 | `cramps` | **agent, study context decides** | `approval_required` → `Muscle spasms` |
+| **K** | GI-2025-03 | `cramps` | **agent, same verbatim, other study** | `approval_required` → `Abdominal pain` |
+| L | CARD-2025-02 | `heart races when I stand up` | agent, competing rhythm terms | `approval_required` → `Tachycardia` |
+
+### Cases J and K: why the second tool exists
+
+J and K are the same verbatim — `cramps` — in two different studies. Similarity
+search returns the same candidate set for both (`Muscle spasms`, `Myalgia`,
+`Abdominal pain`), and nothing in the verbatim itself can separate them. The only
+differentiator is what `get_study_info` returns:
+
+- **ONCO-2024-01** is an endocrine-therapy breast cancer study that actively
+  monitors muscle cramps and spasms, and explicitly does not treat GI events as an
+  endpoint → `Muscle spasms` (10028334).
+- **GI-2025-03** is a reflux study where abdominal cramping is an expected adverse
+  event of special interest and musculoskeletal events are not an endpoint →
+  `Abdominal pain` (10000081).
+
+Identical input, different code, decided entirely by study context — the same way a
+human coder who knows the protocol would decide it. Case I is the drug-side version
+of the same idea: `NEXIM` (tranexamic acid, an antifibrinolytic) and `NEXIUM`
+(esomeprazole, a PPI) are both lexically near-identical to the misspelled `nexiuum`,
+and only the study's expected concomitant medications tell them apart.
+
+**Assert on the code, not the status, for J and K.** The *selected term* is stable
+across runs — five consecutive executions of case J returned `Muscle spasms` every
+time. The *confidence* is not: the same input scored 0.85, 0.85, 0.88, 0.88 and 0.92
+across those runs, which straddles the 0.90 autocode gate, so J legitimately lands in
+either `autocoded` or `approval_required` depending on the run. That is inherent to a
+model-authored score, not a defect — but it means a verbatim whose confidence sits
+near a threshold is not a deterministic fixture. If you need a reproducible assertion
+for CI, compare `dict_term_code`; treat the status as a band.
+
+### How `score` is defined (read this before tuning thresholds)
+
+The `score` the agent returns — and therefore the value `ScoreThreshold` routes on —
+is the **agent's own coding confidence**, not the retrieval cosine similarity that
+`search_dictionary` reports. The two are different measurements and are not
+interchangeable:
+
+| Verbatim | Retrieval cosine | Coding confidence | Why they differ |
 |---|---|---|---|
-| A | `Dislocated shoulder` | exact dictionary match | `autocoded`, score 1.00 |
-| B | `Hypothyroid` | synonym match | `autocoded`, score 1.00 |
-| C | `HAEMORRHAGE` | block-list hit | `open` (safety block) |
-| D | `migrane` | agent, high confidence | `autocoded` |
-| E | `flutters in my chest sometimes` | agent, medium confidence | `approval_required` |
-| F | `asdfghjkl` | agent, no confident match | `open` |
-| G | `ibuprofen` | exact match (WHODrug) | `autocoded`, score 1.00 |
-| H | `FULVESTRANT` | exact match, `derivation_only` | `autocoded`, only `derivation`/`hierarchy` written, no new `dict_term` |
-| I | `nexiuum` | agent, medium confidence (misspelling) | `approval_required` |
+| `migrane` | 0.37 | 0.99 | A misspelling is lexically distant from its correct term even when the coding decision is unambiguous. |
+| `flutters in my chest sometimes` | 0.65 | 0.88 | Lay phrasing overlaps several rhythm terms; the decision is genuinely less certain than D. |
+
+Routing on raw cosine similarity inverts these two cases, which is why the prompt
+asks for a confidence judgment instead. Retrieval correctness (is the right candidate
+in the list?) and routing confidence (how sure are we of the choice?) are separate
+concerns, and only the first is a property of the embedding.
+
+**This means the routing signal is model-authored.** That is deliberate — it is the
+only signal available that tracks coding difficulty rather than string distance — but
+it is defended by controls that are *not* model-authored:
+
+- the block-list runs before any model call and cannot be overridden by the agent;
+- `WriteBack` verifies the chosen code actually exists in the target dictionary and
+  version (`verifyCodeExists`), so a fabricated or study-description-derived code is
+  rejected rather than persisted;
+- the 0.90/0.70 gates live in the state machine definition, not in the prompt, so
+  they are configuration a reviewer can audit and tune;
+- anything below the autocode gate reaches a human.
+
+The 0.90/0.70 values themselves remain illustrative starting points. Calibrate them
+against your own dictionary and verbatim distribution before relying on them.
 
 ### Run one case and check the response
 
@@ -281,13 +349,10 @@ land where expected:
   `TaskSucceeded` event's output contains the assistant's JSON text (term, code,
   hierarchy, and self-reported confidence score) that `ScoreThreshold` routes on.
 
-> **Known calibration gap:** the 0.90/0.70 thresholds above are illustrative and were
-> not derived from this sample's actual embeddings. Raw Titan cosine similarity for
-> this fixture data does not land in those bands, so cases D, E, and I may currently
-> all route to `open` instead of their expected outcome — retrieval correctness (the
-> right candidate is always found) and score calibration (the number used for
-> routing) are separate concerns, and only the former is guaranteed by the current
-> prompt. See `docs/DISCLAIMER.md`.
+> **If a semantic-search case routes unexpectedly,** check the *confidence* the agent
+> returned, not the cosine score — see "How `score` is defined" above. A case that
+> lands in `open` with a correct top candidate usually means the agent reported low
+> confidence, not that retrieval failed.
 
 ## Security
 
