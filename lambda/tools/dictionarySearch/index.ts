@@ -17,7 +17,7 @@ import { executeStatement } from '../../shared/dataApi';
  * choose from. The agent copies the winning candidate's fields verbatim into
  * its JSON answer; the workflow's Choice state then routes on `score`.
  *
- * Embeddings are written by the seed script for now (scripts/seed.py); the
+ * Embeddings are written by the seed script for now (scripts/seed.ts); the
  * CDC-driven embedding pipeline is deferred. Rows without an embedding are
  * excluded rather than erroring so a partially-embedded table degrades
  * gracefully.
