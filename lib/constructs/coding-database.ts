@@ -72,14 +72,25 @@ export class CodingDatabase extends Construct {
       defaultDatabaseName: CodingDatabase.DATABASE_NAME,
       enableDataApi: true,
       credentials: rds.Credentials.fromGeneratedSecret('coding_admin'),
-      // Encryption at rest with the AWS-managed key for RDS. Aurora clusters
-      // default to encrypted, but declaring it explicitly is deliberate: this
-      // sample sits in a clinical-data context, `cdk synth` otherwise emits
-      // CloudFormation-Validate W9008 ("RDS instance should have
-      // StorageEncrypted set to true"), and a reader copying this construct
-      // into a real deployment should see the control rather than inherit it
-      // silently. Swap in a customer-managed KMS key here if your key policy
-      // requires one.
+      // Encryption at rest with the AWS-managed key for RDS.
+      //
+      // This is NOT redundant: before it was set, the deployed cluster was
+      // verified to be `StorageEncrypted: false`. Aurora Serverless v2 did not
+      // default encryption on here, so the sample was shipping an unencrypted
+      // database in a clinical-data context. Verified after the fix:
+      // StorageEncrypted true with a KMS key ARN.
+      //
+      // Note this does NOT silence CloudFormation-Validate W9008 ("RDS
+      // instance should have StorageEncrypted set to true"). That warning
+      // targets the AWS::RDS::DBInstance writer, where StorageEncrypted is
+      // unset - which is correct for Aurora, because encryption is a
+      // cluster-level property. The warning is a false positive for the
+      // instance and will persist; see docs/KNOWN-ISSUES.md.
+      //
+      // Swap in a customer-managed KMS key here if your key policy requires
+      // one. Changing this setting on an existing deployment REPLACES the
+      // cluster - safe for this sample since all data is reseedable via
+      // `npm run seed`.
       storageEncrypted: true,
       removalPolicy: RemovalPolicy.DESTROY,
     });
