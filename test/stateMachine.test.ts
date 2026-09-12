@@ -99,6 +99,38 @@ describe('state machine wiring', () => {
     }
   });
 
+  it('pre-initializes every variable MarkOpen reads in CaptureInput', () => {
+    // MarkOpen is reachable BEFORE CodingAgent runs (block-list hit, or a
+    // Catch on CheckDirect), and Task Assigns only run on success. Any
+    // variable MarkOpen references must therefore be defined up front, or
+    // its payload raises States.QueryEvaluationError on exactly the paths
+    // that exist to keep the workflow from failing.
+    const assigned = Object.keys(asl.States.CaptureInput.Assign);
+    const payload = asl.States.MarkOpen.Arguments.Payload;
+    const referenced = new Set<string>();
+    for (const expr of Object.values(payload)) {
+      if (typeof expr !== 'string') continue;
+      for (const m of expr.matchAll(/\$([A-Za-z_][A-Za-z0-9_]*)/g)) {
+        referenced.add(m[1]);
+      }
+    }
+    for (const v of referenced) {
+      expect(assigned).toContain(v);
+    }
+  });
+
+  it('persists the agent rationale on the open path', () => {
+    // "Why was this left for a human" is the audit question an open row
+    // raises; the rationale is the only field worth keeping when no code is.
+    const payload = asl.States.MarkOpen.Arguments.Payload;
+    expect(payload.rationale).toBeDefined();
+    expect(payload.rationale).toContain('agentCandidate.rationale');
+    // Must be guarded, since $agentCandidate is null before CodingAgent runs.
+    expect(payload.rationale).toMatch(/\?.*:/);
+    // An open row must still write no code.
+    expect(Object.keys(payload)).not.toContain('candidate');
+  });
+
   it('uses fully-qualified Gateway tool names in AllowedTools', () => {
     const allowed: string[] = asl.States.CodingAgent.Arguments.AllowedTools;
     expect(allowed).toEqual([

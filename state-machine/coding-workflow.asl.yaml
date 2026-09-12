@@ -43,6 +43,12 @@ States:
       # Always defined so MarkOpen can reference it on the happy path too.
       # A Catch overwrites this with the actual error name.
       failureReason: "{% null %}"
+      # Same reason: MarkOpen records the agent's rationale, but it is also
+      # reachable BEFORE CodingAgent ever runs (block-list hit, or a Catch on
+      # CheckDirect). CodingAgent's Assign overwrites this with the parsed
+      # answer; initializing it here keeps $agentCandidate defined on every
+      # path, so MarkOpen's payload cannot raise on an undefined variable.
+      agentCandidate: "{% null %}"
     Next: CheckDirect
 
   # State 1+2 (deterministic, no LLM) - block-list guard + exact/synonym
@@ -442,6 +448,12 @@ States:
         # review floor). Non-null only when a Catch routed here after an
         # error, which is what makes the two cases tellable apart.
         failure_reason: "{% $failureReason %}"
+        # The agent's reasoning, when an agent ran at all. This is the one
+        # field worth persisting on a path that deliberately stores no code:
+        # a low-confidence open row should say WHY nothing was good enough.
+        # Guarded with a conditional because $agentCandidate is null whenever
+        # MarkOpen is reached before CodingAgent (block-list, early Catch).
+        rationale: "{% $agentCandidate.rationale ? $agentCandidate.rationale : null %}"
     Output: "{% $states.result.Payload %}"
     Retry:
       # Transient Lambda-side faults.
