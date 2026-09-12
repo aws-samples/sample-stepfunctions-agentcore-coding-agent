@@ -32,6 +32,7 @@ interface Candidate {
   derivation?: string | null;
   hierarchy?: unknown;
   score?: number | null;
+  rationale?: string | null;
 }
 
 interface WriteBackInput {
@@ -53,6 +54,15 @@ interface WriteBackInput {
    * "something broke" - both otherwise look identical in study_terms.
    */
   failure_reason?: string | null;
+  /**
+   * The agent's one-sentence justification, on the `open` path only. Sent
+   * separately from `candidate` because an open row deliberately stores NO
+   * code - but the agent's reasoning is most valuable precisely when it
+   * declined to code, so an auditor can see WHY a term was left for a human
+   * rather than only that it was. Null when no agent ran (block-list hit, or
+   * an error before CodingAgent).
+   */
+  rationale?: string | null;
 }
 
 interface WriteBackResult {
@@ -60,6 +70,7 @@ interface WriteBackResult {
   status: string;
   dict_term_code?: string | null;
   score?: number | null;
+  rationale?: string | null;
   /** Present only when the row was left open because something failed. */
   failure_reason?: string | null;
 }
@@ -72,10 +83,11 @@ export const handler = async (event: WriteBackInput): Promise<WriteBackResult> =
   }
 
   if (target === 'open') {
-    await markOpen(recordId, event.failure_reason ?? null);
+    await markOpen(recordId, event.failure_reason ?? null, event.rationale ?? null);
     return {
       record_id: recordId,
       status: 'open',
+      rationale: event.rationale ?? null,
       ...(event.failure_reason ? { failure_reason: event.failure_reason } : {}),
     };
   }
@@ -85,7 +97,7 @@ export const handler = async (event: WriteBackInput): Promise<WriteBackResult> =
     // Defensive: asked to code, but handed no candidate. That is a caller
     // bug, not a coding decision, so record it as such rather than letting it
     // masquerade as "deliberately left open".
-    await markOpen(recordId, 'MissingCandidate');
+    await markOpen(recordId, 'MissingCandidate', event.rationale ?? null);
     return { record_id: recordId, status: 'open', failure_reason: 'MissingCandidate' };
   }
 
@@ -133,7 +145,8 @@ export const handler = async (event: WriteBackInput): Promise<WriteBackResult> =
       `UPDATE study_terms
        SET status = :status, status_changed_by = :by,
            derivation = :derivation, hierarchy = :hierarchy::jsonb,
-           match_score = :score, last_encoded_ts = EXTRACT(EPOCH FROM now())
+           match_score = :score, rationale = :rationale,
+           last_encoded_ts = EXTRACT(EPOCH FROM now())
        WHERE record_id = :record_id`,
       [
         { name: 'record_id', value: { stringValue: recordId } },
@@ -142,6 +155,7 @@ export const handler = async (event: WriteBackInput): Promise<WriteBackResult> =
         stringOrNull('derivation', cand.derivation),
         hierarchyParam,
         scoreParam,
+        stringOrNull('rationale', cand.rationale),
       ]
     );
   } else {
@@ -151,7 +165,7 @@ export const handler = async (event: WriteBackInput): Promise<WriteBackResult> =
            dict_term = :dict_term, dict_term_type = :dict_term_type,
            dict_term_code = :dict_term_code, derivation = :derivation,
            hierarchy = :hierarchy::jsonb, match_score = :score,
-           last_encoded_ts = EXTRACT(EPOCH FROM now())
+           rationale = :rationale, last_encoded_ts = EXTRACT(EPOCH FROM now())
        WHERE record_id = :record_id`,
       [
         { name: 'record_id', value: { stringValue: recordId } },
@@ -163,6 +177,7 @@ export const handler = async (event: WriteBackInput): Promise<WriteBackResult> =
         stringOrNull('derivation', cand.derivation),
         hierarchyParam,
         scoreParam,
+        stringOrNull('rationale', cand.rationale),
       ]
     );
   }
@@ -172,6 +187,7 @@ export const handler = async (event: WriteBackInput): Promise<WriteBackResult> =
     status: target,
     dict_term_code: cand.dict_term_code,
     score: cand.score ?? null,
+    rationale: cand.rationale ?? null,
   };
 };
 
@@ -208,20 +224,28 @@ const verifyCodeExists = async (
   }
 };
 
-const markOpen = async (recordId: string, failureReason: string | null): Promise<void> => {
+const markOpen = async (
+  recordId: string,
+  failureReason: string | null,
+  rationale: string | null
+): Promise<void> => {
   // status_changed_by carries the failure cause when there was one, so the
   // distinction survives in the row itself and not only in the execution
   // history: 'autocoding-workflow' = decided not to code,
   // 'autocoding-workflow:error:<Error>' = never got to decide.
   const changedBy = failureReason ? `${MACHINE}:error:${failureReason}` : MACHINE;
+  // No code is written on this path by design; rationale is the one field
+  // that IS worth keeping, because "why we did not code this" is the audit
+  // question an open row raises.
   await executeStatement(
     `UPDATE study_terms
-     SET status = 'open', status_changed_by = :by,
+     SET status = 'open', status_changed_by = :by, rationale = :rationale,
          last_encoded_ts = EXTRACT(EPOCH FROM now())
      WHERE record_id = :record_id`,
     [
       { name: 'record_id', value: { stringValue: recordId } },
       { name: 'by', value: { stringValue: changedBy } },
+      stringOrNull('rationale', rationale),
     ]
   );
 };

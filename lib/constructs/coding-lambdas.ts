@@ -37,7 +37,7 @@ export class CodingLambdas extends Construct {
     };
 
     const commonProps: Partial<nodejs.NodejsFunctionProps> = {
-      runtime: lambda.Runtime.NODEJS_22_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       // 90s, not the 30s default. These functions call the RDS Data API
       // against a Serverless v2 cluster that can be scaled to 0 ACU, and a
       // cold resume plus an HNSW vector query is slow: a live burst of 12

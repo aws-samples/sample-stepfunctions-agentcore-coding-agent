@@ -158,6 +158,7 @@ const SCHEMA_STATEMENTS = [
       derivation           TEXT,
       hierarchy            JSONB,
       match_score          NUMERIC(4,3),           -- 0.000 - 1.000 (semantic path only)
+      rationale            TEXT,                   -- agent's one-sentence justification (agent path only; null on deterministic matches)
       last_encoded_ts      BIGINT,
       created_at_ts        BIGINT
   )
