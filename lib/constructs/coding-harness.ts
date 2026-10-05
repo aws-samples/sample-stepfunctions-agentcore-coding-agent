@@ -42,7 +42,7 @@ export class CodingHarness extends Construct {
     const executionRolePolicy = new iam.Policy(this, 'HarnessExecutionRolePolicy', {
       statements: [
         new iam.PolicyStatement({
-          // modelId "us.anthropic.claude-sonnet-4-6" is a cross-region
+          // modelId "us.anthropic.claude-sonnet-5" is a cross-region
           // inference profile, not a plain foundation model - the harness
           // calls bedrock:InvokeModelWithResponseStream on the *inference
           // profile* ARN, which in turn fans out to foundation-model ARNs in
@@ -130,7 +130,7 @@ export class CodingHarness extends Construct {
       executionRoleArn: executionRole.roleArn,
       model: {
         bedrockModelConfig: {
-          modelId: 'us.anthropic.claude-sonnet-4-6',
+          modelId: 'us.anthropic.claude-sonnet-5',
         },
       },
       memory: { disabled: {} },

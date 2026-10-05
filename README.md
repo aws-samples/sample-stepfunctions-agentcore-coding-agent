@@ -20,7 +20,7 @@ redistributable dictionary extract. No customer or patient data is included.
 - The AWS CDK CLI — installed via `npm install` below (`aws-cdk` is a dev dependency), or globally with `npm install -g aws-cdk`.
 - Your target account/region [bootstrapped for CDK](https://docs.aws.amazon.com/cdk/v2/guide/bootstrapping.html) (`npx cdk bootstrap`), if this is the first CDK deploy there.
 - `jq` and `uuidgen` — used only by the shell snippets in the testing section below, not by the deploy or seed steps. `uuidgen` ships with macOS and most Linux distros; on a minimal Amazon Linux 2023 host neither is present, so install both with `sudo dnf install -y jq util-linux` (`jq` via `brew install jq` / `apt install jq` elsewhere).
-- Model access enabled in the Amazon Bedrock console for **Titan Text Embeddings V2** (`amazon.titan-embed-text-v2:0`, used by the seed script and the dictionary-search tool) and **Claude Sonnet** (the harness's `us.anthropic.claude-sonnet-4-6` inference profile — see `lib/constructs/coding-harness.ts`), in the region you deploy to.
+- The one-time [Anthropic first-time use form](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html) submitted for your account. Amazon Bedrock enables model access by default, but Anthropic models require this form before the first call. The sample uses **Claude Sonnet 5** (the harness's `us.anthropic.claude-sonnet-5` inference profile — see `lib/constructs/coding-harness.ts`) and **Titan Text Embeddings V2** (`amazon.titan-embed-text-v2:0`, used by the seed script and the dictionary-search tool). Deploy in a Region where Amazon Bedrock AgentCore and both models are available.
 
 ## The design pattern
 
