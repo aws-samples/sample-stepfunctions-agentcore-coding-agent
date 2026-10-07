@@ -444,14 +444,14 @@ AE_ROWS = [
      "10021114", "Thyroid hypofunction disorders", "Thyroid gland disorders",
      "Endocrine disorders", "Y", MACHINE, "1.00"),
     ("migrane", "Autocoded", "MedDRA v27.0", "Migraine", "Migraine", "10027599",
-     "Migraine headaches", "Headaches", "Nervous system disorders", "Y", MACHINE, "0.99"),
+     "Migraine headaches", "Headaches", "Nervous system disorders", "Y", MACHINE, "0.97"),
     ("flutters in my chest sometimes", "Pending Approval", "MedDRA v27.0",
      "Cardiac flutter", "Cardiac flutter", "10052840", "Rate and rhythm disorders NEC",
-     "Cardiac arrhythmias", "Cardiac disorders", "Y", MACHINE, "0.88"),
-    ("cramps", "Pending Approval", "MedDRA v27.0", "Muscle spasms", "Muscle spasms",
+     "Cardiac arrhythmias", "Cardiac disorders", "Y", MACHINE, "0.75"),
+    ("cramps", "Autocoded", "MedDRA v27.0", "Muscle spasms", "Muscle spasms",
      "10028334", "Muscle related signs and symptoms",
      "Musculoskeletal and connective tissue disorders NEC",
-     "Musculoskeletal and connective tissue disorders", "Y", MACHINE, "0.82"),
+     "Musculoskeletal and connective tissue disorders", "Y", MACHINE, "0.92"),
     ("HAEMORRHAGE", "Open", "MedDRA v27.0", "", "", "", "", "", "", "", "", ""),
     ("asdfghjkl", "Open", "MedDRA v27.0", "", "", "", "", "", "", "", "", ""),
 ]
@@ -469,7 +469,7 @@ CM_ROWS = [
     ("FULVESTRANT", "Coded", "GLOBAL-2024", "FULVESTRANT", "01503001001",
      "", "", "FULVESTRANT", "autocoded (derivation_only)", MACHINE, "1.00"),
     ("nexiuum", "Coded", "GLOBAL-2024", "ESOMEPRAZOLE", "00201501001",
-     "NEXIUM", "00201501382", "ESOMEPRAZOLE", "autocoded", MACHINE, "0.98"),
+     "NEXIUM", "00201501382", "ESOMEPRAZOLE", "autocoded", MACHINE, "0.95"),
 ]
 with open(os.path.join(HERE, "encoded_cm_whodrug.csv"), "w", newline="") as f:
     w = csv.writer(f)
@@ -486,6 +486,9 @@ with open(os.path.join(HERE, "encoded_cm_whodrug.csv"), "w", newline="") as f:
 # misspelling is low even when the coding decision is obvious, so the two
 # numbers are not interchangeable and cannot be compared to the same
 # thresholds.
+#
+# Agent-path scores are from one run on Claude Sonnet 5. Ranges are from six
+# runs of the same input; the selected code was identical in every run.
 # ---------------------------------------------------------------------------
 GOLD_HEADER = ["case_id", "case_name", "stage", "table", "study", "verbatim",
                "dict_term", "dict_term_type", "dict_term_code", "derivation",
@@ -531,11 +534,11 @@ GOLD = [
     ("D", "agent_semantic_autocoded", "input", "study_terms", STUDY_ONCO, "migrane",
      "", "", "", "", "open", "", "typo of 'migraine'; no exact/synonym hit"),
     ("D", "agent_semantic_autocoded", "agent_search", "dictionary_terms", STUDY_ONCO,
-     "migrane", "Migraine", "PT", "10027599", "Migraine", "", "0.99",
+     "migrane", "Migraine", "PT", "10027599", "Migraine", "", "0.97",
      "retrieval cosine is only ~0.37 (a misspelling is lexically distant) but the "
      "coding decision is unambiguous, so the agent's CONFIDENCE is high -> autocode"),
     ("D", "agent_semantic_autocoded", "output", "study_terms", STUDY_ONCO, "migrane",
-     "Migraine", "PT", "10027599", "Migraine", "autocoded", "0.99",
+     "Migraine", "PT", "10027599", "Migraine", "autocoded", "0.97",
      "machine coded via agent path"),
 
     # CASE E: agent semantic search -> approval_required (medium confidence)
@@ -544,12 +547,13 @@ GOLD = [
      "verbose lay description; no exact/synonym hit"),
     ("E", "agent_semantic_review", "agent_search", "dictionary_terms", STUDY_ONCO,
      "flutters in my chest sometimes", "Cardiac flutter", "PT", "10052840",
-     "Cardiac flutter", "", "0.88",
-     "competing rhythm candidates (Palpitations, Tachycardia); study lists cardiac "
-     "rhythm disturbances as an AESI -> confident but not certain"),
+     "Cardiac flutter", "", "0.75",
+     "lay description; Cardiac flutter is the closest candidate returned. A coder "
+     "would normally pick Palpitations, but retrieval ranks it 19th, so it is never "
+     "a candidate (docs/KNOWN-ISSUES.md #1) -> confident but not certain"),
     ("E", "agent_semantic_review", "output", "study_terms", STUDY_ONCO,
      "flutters in my chest sometimes", "Cardiac flutter", "PT", "10052840",
-     "Cardiac flutter", "approval_required", "0.88",
+     "Cardiac flutter", "approval_required", "0.75-0.78",
      "routed to a human coder for one-click confirm/override"),
 
     # CASE F: no confident match -> open
@@ -582,21 +586,20 @@ GOLD = [
      "", "", "", "FULVESTRANT", "autocoded", "1.00",
      "updates ONLY derivation + ATC hierarchy, never a new dict_term"),
 
-    # CASE I: two lexically-near trade names, study context breaks the tie
+    # CASE I: two lexically-near trade names, resolved as a plain misspelling
     ("I", "agent_near_miss_trade_name", "input", "study_terms", STUDY_GI, "nexiuum",
      "", "", "", "", "open", "", "misspelling of a trade name; WHODrug con-med"),
     ("I", "agent_near_miss_trade_name", "agent_search", "dictionary_terms", STUDY_GI,
-     "nexiuum", "NEXIUM", "trade name", "00201501382", "ESOMEPRAZOLE", "", "0.98",
+     "nexiuum", "NEXIUM", "trade name", "00201501382", "ESOMEPRAZOLE", "", "0.95",
      "search returns BOTH 'NEXIM' (tranexamic acid, an antifibrinolytic) and "
      "'NEXIUM' (esomeprazole, a PPI) - lexically near-identical to the verbatim. "
-     "get_study_info reports a reflux study whose expected con-meds are PPIs and "
-     "which explicitly does not expect antifibrinolytics, so the choice is "
-     "unambiguous once context is applied -> high confidence"),
+     "The agent reads it as an obvious misspelling of NEXIUM without calling "
+     "get_study_info (0.95-0.97 over six runs) -> high confidence"),
     ("I", "agent_near_miss_trade_name", "output", "study_terms", STUDY_GI, "nexiuum",
-     "NEXIUM", "trade name", "00201501382", "ESOMEPRAZOLE", "autocoded", "0.98",
-     "autocoded: the misspelling has exactly one clinically plausible reading in "
-     "this study. Contrast with cases J/K/L, where several candidates remain "
-     "plausible after context and the workflow routes to human review"),
+     "NEXIUM", "trade name", "00201501382", "ESOMEPRAZOLE", "autocoded", "0.95-0.97",
+     "autocoded: the misspelling has exactly one plausible reading. Contrast with "
+     "cases K/L, where several candidates remain plausible and the workflow routes "
+     "to human review"),
 
     # CASES J/K: the SAME verbatim, two studies, two different correct codes.
     ("J", "study_context_musculoskeletal", "input", "study_terms", STUDY_ONCO,
@@ -604,34 +607,36 @@ GOLD = [
      "ambiguous lay term: could be muscle cramps OR abdominal cramping"),
     ("J", "study_context_musculoskeletal", "agent_search", "dictionary_terms",
      STUDY_ONCO, "cramps", "Muscle spasms", "PT", "10028334", "Muscle spasms",
-     "", "0.85-0.92",
+     "", "0.92",
      "search returns Muscle spasms, Myalgia AND Abdominal pain as plausible; "
-     "get_study_info reports an endocrine-therapy breast cancer study actively "
-     "monitoring muscle cramps/spasms, GI events not an endpoint -> Muscle spasms"),
+     "Muscle spasms is the common reading of 'cramps', and when the agent calls "
+     "get_study_info it confirms an endocrine-therapy breast cancer study that "
+     "monitors muscle cramps/spasms -> Muscle spasms"),
     ("J", "study_context_musculoskeletal", "output", "study_terms", STUDY_ONCO,
      "cramps", "Muscle spasms", "PT", "10028334", "Muscle spasms",
-     "autocoded|approval_required", "0.85-0.92",
-     "SAME verbatim as case K, DIFFERENT code - the study context is the only "
-     "thing that separates them. ASSERT ON dict_term_code, NOT status: the term "
-     "is stable across runs but the model-authored confidence straddles the 0.90 "
-     "gate (observed 0.85/0.85/0.88/0.88/0.92 over five identical runs)"),
+     "autocoded|approval_required", "0.75-0.92",
+     "SAME verbatim as case K, DIFFERENT code - the study context is what moves "
+     "K to Abdominal pain. ASSERT ON dict_term_code, NOT status: the term is "
+     "stable across runs but the model-authored confidence straddles the 0.90 "
+     "gate (observed 0.92/0.75/0.90/0.85/0.85/0.85 over six identical runs, "
+     "autocoded twice)"),
 
     ("K", "study_context_gastrointestinal", "input", "study_terms", STUDY_GI,
      "cramps", "", "", "", "", "open", "",
      "identical verbatim to case J, different study"),
     ("K", "study_context_gastrointestinal", "agent_search", "dictionary_terms",
      STUDY_GI, "cramps", "Abdominal pain", "PT", "10000081", "Abdominal pain",
-     "", "0.80-0.92",
+     "", "0.85",
      "same candidate set as case J; get_study_info reports a reflux study where "
      "abdominal cramping is an expected AESI and musculoskeletal events are not "
      "an endpoint -> Abdominal pain"),
     ("K", "study_context_gastrointestinal", "output", "study_terms", STUDY_GI,
      "cramps", "Abdominal pain", "PT", "10000081", "Abdominal pain",
-     "autocoded|approval_required", "0.80-0.92",
-     "THE demonstration case: identical input to J, different code, driven "
-     "entirely by the study metadata the second tool supplies. Assert on "
-     "dict_term_code - the status depends on where the run's confidence lands "
-     "relative to the 0.90 gate"),
+     "approval_required", "0.78-0.85",
+     "THE demonstration case: identical input to J, different code, driven by "
+     "the study metadata the second tool supplies (get_study_info called in six "
+     "of six runs). Assert on dict_term_code; confidence stayed below the 0.90 "
+     "gate in every run"),
 
     # CASE L: cardiac study, lay rhythm description
     ("L", "study_context_cardiac", "input", "study_terms", STUDY_CARD,
@@ -639,13 +644,13 @@ GOLD = [
      "lay rhythm description in an arrhythmia study"),
     ("L", "study_context_cardiac", "agent_search", "dictionary_terms", STUDY_CARD,
      "heart races when I stand up", "Tachycardia", "PT", "10043071", "Tachycardia",
-     "", "0.85",
+     "", "0.80",
      "competing rhythm candidates (Palpitations, Cardiac flutter, Atrial "
      "fibrillation); 'races' maps to rate, and the study codes lay rhythm "
      "symptoms to the cardiac SOC -> Tachycardia"),
     ("L", "study_context_cardiac", "output", "study_terms", STUDY_CARD,
      "heart races when I stand up", "Tachycardia", "PT", "10043071", "Tachycardia",
-     "approval_required", "0.85",
+     "approval_required", "0.78-0.85",
      "review-tier: lay language mapped to a specific rhythm term warrants "
      "human confirmation"),
 ]

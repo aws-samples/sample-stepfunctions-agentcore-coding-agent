@@ -159,8 +159,8 @@ execution output and the persisted database row.
 | F | ONCO-2024-01 | `asdfghjkl` | agent, no confident match | `open` |
 | G | ONCO-2024-01 | `ibuprofen` | exact match (WHODrug) | `autocoded`, score 1.00 |
 | H | ONCO-2024-01 | `FULVESTRANT` | exact match, `derivation_only` | `autocoded`, only `derivation`/`hierarchy` written, no new `dict_term` |
-| I | GI-2025-03 | `nexiuum` | agent, near-miss trade names split by study context | `autocoded` → `NEXIUM` (esomeprazole), *not* `NEXIM` (tranexamic acid) |
-| **J** | ONCO-2024-01 | `cramps` | **agent, study context decides** | `approval_required` → `Muscle spasms` |
+| I | GI-2025-03 | `nexiuum` | agent, near-miss trade names | `autocoded` → `NEXIUM` (esomeprazole), *not* `NEXIM` (tranexamic acid) |
+| **J** | ONCO-2024-01 | `cramps` | **agent, same verbatim, oncology study** | `autocoded` or `approval_required` → `Muscle spasms` |
 | **K** | GI-2025-03 | `cramps` | **agent, same verbatim, other study** | `approval_required` → `Abdominal pain` |
 | L | CARD-2025-02 | `heart races when I stand up` | agent, competing rhythm terms | `approval_required` → `Tachycardia` |
 
@@ -178,17 +178,16 @@ differentiator is what `get_study_info` returns:
   event of special interest and musculoskeletal events are not an endpoint →
   `Abdominal pain` (10000081).
 
-Identical input, different code, decided entirely by study context — the same way a
-human coder who knows the protocol would decide it. Case I is the drug-side version
-of the same idea: `NEXIM` (tranexamic acid, an antifibrinolytic) and `NEXIUM`
-(esomeprazole, a PPI) are both lexically near-identical to the misspelled `nexiuum`,
-and only the study's expected concomitant medications tell them apart.
+Identical input, different code. `Muscle spasms` is the common reading of `cramps`;
+the study context is what moves the GI case to `Abdominal pain` — the same way a
+human coder who knows the protocol would decide it. The agent called `get_study_info`
+for case K in every run.
 
 **Assert on the code, not the status, for J and K.** The *selected term* is stable
-across runs — five consecutive executions of case J returned `Muscle spasms` every
-time. The *confidence* is not: the same input scored 0.85, 0.85, 0.88, 0.88 and 0.92
-across those runs, which straddles the 0.90 autocode gate, so J legitimately lands in
-either `autocoded` or `approval_required` depending on the run. That is inherent to a
+across runs — six executions of case J on Claude Sonnet 5 returned `Muscle spasms`
+every time. The *confidence* is not: the same input scored 0.92, 0.75, 0.90, 0.85,
+0.85 and 0.85, which straddles the 0.90 autocode gate, so J legitimately lands in
+either `autocoded` or `approval_required` depending on the run (it autocoded twice). That is inherent to a
 model-authored score, not a defect — but it means a verbatim whose confidence sits
 near a threshold is not a deterministic fixture. If you need a reproducible assertion
 for CI, compare `dict_term_code`; treat the status as a band.
@@ -198,12 +197,12 @@ for CI, compare `dict_term_code`; treat the status as a band.
 The `score` the agent returns — and therefore the value `ScoreThreshold` routes on —
 is the **agent's own coding confidence**, not the retrieval cosine similarity that
 `search_dictionary` reports. The two are different measurements and are not
-interchangeable:
+interchangeable. Coding confidence below is from one run on Claude Sonnet 5:
 
 | Verbatim | Retrieval cosine | Coding confidence | Why they differ |
 |---|---|---|---|
-| `migrane` | 0.37 | 0.99 | A misspelling is lexically distant from its correct term even when the coding decision is unambiguous. |
-| `flutters in my chest sometimes` | 0.65 | 0.88 | Lay phrasing overlaps several rhythm terms; the decision is genuinely less certain than D. |
+| `migrane` | 0.37 | 0.97 | A misspelling is lexically distant from its correct term even when the coding decision is unambiguous. |
+| `flutters in my chest sometimes` | 0.65 | 0.75 | Lay phrasing overlaps several rhythm terms; the decision is genuinely less certain than D. |
 
 Routing on raw cosine similarity inverts these two cases, which is why the prompt
 asks for a confidence judgment instead. Retrieval correctness (is the right candidate

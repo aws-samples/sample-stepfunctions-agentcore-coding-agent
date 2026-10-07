@@ -27,7 +27,8 @@ Observed on case E, verbatim `flutters in my chest sometimes`:
 | … | | |
 | **19** | **Palpitations** | **0.0655** |
 
-The agent requested `top_k:10` and coded this to **Cardiac flutter** — a
+With the tool's default of 10 candidates, the agent coded this to
+**Cardiac flutter** — a
 specific ECG-diagnosable arrhythmia. But a patient reporting a *sensation* of
 fluttering would conventionally be coded to **Palpitations**, which sits at
 **rank 19**, below Nausea, Diarrhoea, Vomiting and Dislocated shoulder — terms
@@ -38,10 +39,11 @@ reorders what retrieval returns and cannot rescue a term retrieval never
 surfaced, so the earlier reranking investigation does not address this.
 
 Options:
-- **Cheap partial mitigation:** raise the default `top_k` in the tool, or
-  instruct a wider search in the prompt. Reduces but does not eliminate the
-  problem — Palpitations at rank 19 needs `top_k >= 19` out of 32 terms, which
-  at real dictionary scale is not a meaningful filter.
+- **Partial mitigation (applied):** the tool's default `top_k` is 10, because
+  Claude Sonnet 5 does not set `top_k` itself. At the earlier default of 5,
+  `cramps` never surfaced Abdominal pain (rank 9), so case K went `open`. This
+  does not reach Palpitations at rank 19, which would need `top_k >= 19` out of
+  32 terms, and at real dictionary scale that is not a meaningful filter.
 - **Real fix (deferred):** hybrid search — lexical/BM25 alongside vector, or a
   dictionary-aware synonym expansion step. `flutters` → `Palpitations` is a
   known clinical equivalence that a lexical/curated path catches and embedding
@@ -82,26 +84,26 @@ encoding the reason in `status_changed_by`. Deferred because it changes the
 
 **Severity: medium. Design tradeoff, not a bug — but must be disclosed.**
 
-Confidence is authored by the model, and four of six agent cases land within
-0.10 of the 0.90 autocode gate. Two runs of identical input:
+Confidence is authored by the model, and most agent cases land close to the
+0.90 autocode gate. Six runs of identical input on Claude Sonnet 5:
 
-| Case | Run 1 | Run 2 | Status flipped? |
+| Case | Confidence over six runs | Outcomes | Status flipped? |
 |---|---|---|---|
-| E flutters | 0.82 → approval_required | **0.91 → autocoded** | **yes** |
-| J cramps @ ONCO | 0.92 → autocoded | **0.85 → approval_required** | **yes** |
-| L heart races | 0.82 | 0.85 | no |
-| K cramps @ GI | 0.82 | 0.82 | no |
-| D migrane | 0.98 | 0.98 | no |
-| I nexiuum | 0.98 | 0.98 | no |
+| J cramps @ ONCO | 0.75 to 0.92 | autocoded 2, approval_required 4 | **yes** |
+| E flutters | 0.75 to 0.78 | approval_required 6 | no |
+| K cramps @ GI | 0.78 to 0.85 | approval_required 6 | no |
+| L heart races | 0.78 to 0.85 | approval_required 6 | no |
+| D migrane | 0.97 | autocoded 6 | no |
+| I nexiuum | 0.95 to 0.97 | autocoded 6 | no |
 
 **The selected `dict_term_code` was identical in every run** — only the
 confidence moved, and with it whether a human sees the record. Instability is
 confined to genuinely borderline cases, which is defensible behaviour but not
 reproducible.
 
-Consequences: the repo's tests assert on `dict_term_code`, not `status`; and
-case E — the one where a human most needs to look — is precisely the one that
-sometimes skips review.
+Consequences: the repo's tests assert on `dict_term_code`, not `status`; and a
+case near the gate, here J, can autocode on one run and go to review on the
+next. Set the autocode threshold with margin rather than directly on 0.90.
 
 A cross-encoder reranker would give a deterministic, better-calibrated score.
 Measured on an earlier fixture, Cohere Rerank 3.5 corrected the ordering that
