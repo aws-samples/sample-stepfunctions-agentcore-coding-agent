@@ -608,7 +608,8 @@ GOLD = [
     ("J", "study_context_musculoskeletal", "agent_search", "dictionary_terms",
      STUDY_ONCO, "cramps", "Muscle spasms", "PT", "10028334", "Muscle spasms",
      "", "0.92",
-     "search returns Muscle spasms, Myalgia AND Abdominal pain as plausible; "
+     "search returns Muscle spasms (rank 1) and Abdominal pain (rank 9) as the two "
+     "plausible readings; "
      "Muscle spasms is the common reading of 'cramps', and when the agent calls "
      "get_study_info it confirms an endocrine-therapy breast cancer study that "
      "monitors muscle cramps/spasms -> Muscle spasms"),

@@ -167,9 +167,10 @@ execution output and the persisted database row.
 ### Cases J and K: why the second tool exists
 
 J and K are the same verbatim — `cramps` — in two different studies. Similarity
-search returns the same candidate set for both (`Muscle spasms`, `Myalgia`,
-`Abdominal pain`), and nothing in the verbatim itself can separate them. The only
-differentiator is what `get_study_info` returns:
+search returns the same candidates for both, and two of them are plausible readings
+of `cramps`: `Muscle spasms` (rank 1) and `Abdominal pain` (rank 9). Nothing in the
+verbatim itself can separate them. The only difference between J and K is the study,
+and what `get_study_info` returns about it:
 
 - **ONCO-2024-01** is an endocrine-therapy breast cancer study that actively
   monitors muscle cramps and spasms, and explicitly does not treat GI events as an
