@@ -69,13 +69,14 @@ export class CodingHarness extends Construct {
         // had to be reconstructed by correlating the tool Lambdas' own
         // CloudWatch REPORT lines against each CodingAgent task window.
         //
-        // Since July 2026 AgentCore delivers unified observability - traces,
-        // prompts, structured logs and stdout all land in one per-agent log
-        // group, /aws/bedrock-agentcore/runtimes/<agent_id>-<endpoint>, rather
-        // than splitting spans into the shared aws/spans group. Nothing needs
-        // to be enabled on the CfnHarness resource itself (it exposes no
-        // observability property); it is entirely IAM-gated, which is why
-        // these statements ARE the feature switch.
+        // With these statements in place, tool calls (arguments and results)
+        // and token usage reach CloudWatch. On this sample's live deploy
+        // (October 2026) they arrive as spans in the shared aws/spans log
+        // group, and no per-harness /aws/bedrock-agentcore/runtimes/* log
+        // group was created. Nothing needs to be enabled on the CfnHarness
+        // resource itself (it exposes no observability property); it is
+        // entirely IAM-gated, which is why these statements ARE the feature
+        // switch.
         //
         // Mirrors the execution role in the official AgentCore harness +
         // Step Functions sample (01-features/01-harness/01-advanced-examples/
