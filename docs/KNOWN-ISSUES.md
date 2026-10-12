@@ -178,18 +178,6 @@ Re-check on each `aws-cdk-lib` bump and drop this once upstream ships
 
 ---
 
-## 8. Dictionary licensing is unconfirmed
-
-**Severity: blocking for publication. See [SOURCES.md](SOURCES.md).**
-
-The fixtures contain 32 MedDRA and 12 WHODrug terms with **real codes in real
-format** — the earlier synthetic `SAMPLE-` prefixes are gone. Both
-dictionaries are proprietary and licensed; this repository is public. The
-"de minimis illustrative use" position may be defensible but has not been
-confirmed by anyone with authority to confirm it.
-
----
-
 # Fixed
 
 - **Retry gaps causing silent false passes.** A burst of 12 concurrent
