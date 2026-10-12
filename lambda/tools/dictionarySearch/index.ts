@@ -25,7 +25,12 @@ import { executeStatement } from '../../shared/dataApi';
 
 const EMBEDDING_MODEL_ID = 'amazon.titan-embed-text-v2:0';
 const EMBEDDING_DIMENSIONS = 1024;
-const DEFAULT_TOP_K = 5;
+// 10, not 5. Whether the agent passes top_k depends on the model, and Claude
+// Sonnet 5 never sets it. With a default of 5, "cramps" never surfaces
+// Abdominal pain (rank 9) and the GI study case goes open. A deeper default keeps retrieval depth the same
+// whichever model runs. It does not fix recall in general - see
+// docs/KNOWN-ISSUES.md #1 (Palpitations sits at rank 19 for "flutters").
+const DEFAULT_TOP_K = 10;
 const MAX_TOP_K = 25;
 
 const bedrock = new BedrockRuntimeClient({});

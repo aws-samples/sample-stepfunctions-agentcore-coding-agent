@@ -67,7 +67,7 @@ export class CodingGateway extends Construct {
               },
               top_k: {
                 type: agentcore.SchemaDefinitionType.INTEGER,
-                description: 'Number of candidate matches to return (default 5, max 25).',
+                description: 'Number of candidate matches to return (default 10, max 25).',
               },
             },
             required: ['verbatim_term', 'dictionary', 'dictionary_version'],

@@ -12,9 +12,8 @@ Specifically:
   illustrative set — terms chosen to exercise every branch of the workflow,
   not a redistributable extract of either licensed dictionary. Production
   coding requires the full, currently licensed MedDRA and/or WHODrug
-  dictionary for the version in use. **Note these are real codes in real
-  format, and the licensing posture for republishing them has not yet been
-  confirmed — see the unresolved section in [SOURCES.md](SOURCES.md).**
+  dictionary for the version in use. See [SOURCES.md](SOURCES.md) for the
+  license terms of each dictionary.
 - The synonym list (`data/synonym_list.csv`) and block-list
   (`data/terms_not_to_autocode.csv`) are illustrative fixtures authored for this
   repository, not a curated clinical coding standard. A real deployment's
